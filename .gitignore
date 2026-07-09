@@ -1,0 +1,33 @@
+# Visual Studio state
+.vs/
+
+# Build output (root output dir + intermediate dir)
+/x64/
+/Win32/
+/jewsploit/x64/
+/jewsploit/Win32/
+
+# Build artifacts
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+*.exp
+*.tlog
+*.log
+*.lastbuildstate
+*.recipe
+*.CppClean.log
+
+# User-specific project state
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+
+# Do not ignore the prebuilt FreeType libs needed to build
+!Cheat/GUI/FreeType/lib/**

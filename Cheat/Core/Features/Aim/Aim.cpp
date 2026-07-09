@@ -1,0 +1,319 @@
+#define NOMINMAX
+#include "Aim.h"
+#include "../../Settings.h"
+#include "../../Globals/Globals.h"
+#include "../../Memory/Memory.h"
+#include "../../Roblox/Engine/Offsets/Offsets.h"
+#include "../../Roblox/Math/Math.h"
+#include "../../Roblox/Engine/Classes/Classes.h"
+#include "../../PlayerHandler/PlayerHandler.h"
+#include "../../../GUI/imgui/imgui.h"
+#include <Windows.h>
+#include <cmath>
+#include <algorithm>
+#include <cstdlib>
+
+namespace Cheat {
+    namespace Features {
+
+        namespace {
+            using Config = Settings::AimbotConfig;
+
+            bool s_was_pressed = false;
+            bool s_toggled     = false;
+
+            std::uint64_t s_target     = 0;
+            int           s_cycle      = 0;
+            double        s_last_switch = 0.0;
+            double        s_engage_at   = 0.0;
+            std::uint64_t s_pending     = 0;
+
+            const Instance* part_instance(const PlayerCache& c, int part) {
+                switch (part) {
+                    case Settings::AIM_HEAD:        return c.head.get();
+                    case Settings::AIM_UPPER_TORSO: return c.upperTorso.get();
+                    case Settings::AIM_LOWER_TORSO: return c.lowerTorso.get();
+                    case Settings::AIM_HRP:         return c.humanoidRootPart.get();
+                    case Settings::AIM_LEFT_HAND:   return c.leftHand.get();
+                    case Settings::AIM_RIGHT_HAND:  return c.rightHand.get();
+                    case Settings::AIM_LEFT_FOOT:   return c.leftFoot.get();
+                    case Settings::AIM_RIGHT_FOOT:  return c.rightFoot.get();
+                    default:                        return nullptr;
+                }
+            }
+
+            int current_part(const Config& cfg) {
+                int enabled[Settings::AIM_PART_COUNT];
+                int n = 0;
+                for (int i = 0; i < Settings::AIM_PART_COUNT; ++i)
+                    if (cfg.parts[i]) enabled[n++] = i;
+                if (n == 0) return Settings::AIM_HEAD;
+
+                const double now = ImGui::GetTime();
+                if (n > 1 && now - s_last_switch >= cfg.switch_time) {
+                    s_cycle = (s_cycle + 1) % n;
+                    s_last_switch = now;
+                }
+                if (s_cycle >= n) s_cycle = 0;
+                return enabled[s_cycle];
+            }
+
+            ImVec2 fov_anchor(const Config& cfg) {
+                const ImGuiIO& io = ImGui::GetIO();
+                if (cfg.fov_position == 1) {
+                    POINT p{};
+                    if (GetCursorPos(&p))
+                        return ImVec2(static_cast<float>(p.x), static_cast<float>(p.y));
+                    return io.MousePos;
+                }
+                return ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+            }
+
+            void draw_fov(const Config& cfg) {
+                if (!cfg.fov_enabled) return;
+                ImDrawList* dl = ImGui::GetBackgroundDrawList();
+                if (!dl) return;
+
+                const ImVec2 center = fov_anchor(cfg);
+                const float  radius = (std::max)(1.0f, cfg.fov_size);
+                dl->AddCircle(center, radius + 1.0f, IM_COL32(0,   0,   0,   200), 64, 2.0f);
+                dl->AddCircle(center, radius,         IM_COL32(51, 122, 231, 220), 64, 1.0f);
+                dl->AddCircle(center, radius - 1.0f, IM_COL32(0,   0,   0,   100), 64, 1.0f);
+            }
+
+            bool world_to_screen(const Matrix4x4& m, const Vector2& dim,
+                                 const Vector3& p, Vector2& out) {
+                const float w = p.x*m.m[3][0] + p.y*m.m[3][1] + p.z*m.m[3][2] + m.m[3][3];
+                if (w < 0.01f) return false;
+                const float x = p.x*m.m[0][0] + p.y*m.m[0][1] + p.z*m.m[0][2] + m.m[0][3];
+                const float y = p.x*m.m[1][0] + p.y*m.m[1][1] + p.z*m.m[1][2] + m.m[1][3];
+                const float inv = 1.0f / w;
+                out.x = (dim.x * 0.5f) + (x * inv * dim.x * 0.5f);
+                out.y = (dim.y * 0.5f) - (y * inv * dim.y * 0.5f);
+                return true;
+            }
+
+            float frand(float mag) {
+                if (mag <= 0.0f) return 0.0f;
+                const float r = (static_cast<float>(std::rand()) / RAND_MAX) * 2.0f - 1.0f;
+                return r * mag;
+            }
+
+            struct Scene {
+                bool          ok = false;
+                Matrix4x4     view{};
+                Vector2       viewport{};
+                Camera        camera{ 0 };
+                Vector3       cam_pos{};
+                std::uint64_t local = 0;
+            };
+
+            Scene resolve_scene() {
+                Scene s;
+                if (!Globals::Workspace || !Globals::Players) return s;
+                auto cam = Globals::Workspace->GetCurrentCamera();
+                if (!cam) return s;
+
+                s.camera   = Camera(cam->address);
+                s.viewport = s.camera.GetViewportSize();
+                s.cam_pos  = s.camera.GetPosition();
+
+                static uintptr_t base = g_Memory.GetModuleBase();
+                if (!base) base = g_Memory.GetModuleBase();
+                const uintptr_t ve = g_Memory.Read<uintptr_t>(base + Offsets::VisualEngine::Pointer);
+                s.view = g_Memory.Read<Matrix4x4>(ve + Offsets::VisualEngine::ViewMatrix);
+
+                if (g_Memory.IsValid(Globals::Players->address))
+                    s.local = g_Memory.Read<std::uint64_t>(
+                        Globals::Players->address + Offsets::Player::LocalPlayer);
+                s.ok = true;
+                return s;
+            }
+
+            bool select_target(const Config& cfg, const Scene& sc,
+                               Vector3& out_world, Vector2& out_screen) {
+                const int     part   = current_part(cfg);
+                const ImVec2  anchor = fov_anchor(cfg);
+                const Vector2 anchor_v(anchor.x, anchor.y);
+                const float   fov_r  = cfg.fov_enabled ? (std::max)(1.0f, cfg.fov_size) : 1e9f;
+
+                bool    found_sticky = false;
+                Vector3 sticky_world{};
+                Vector2 sticky_screen{};
+
+                bool          found_best = false;
+                float         best_dist  = fov_r;
+                std::uint64_t best_addr  = 0;
+                Vector3       best_world{};
+                Vector2       best_screen{};
+
+                PlayerHandler::ForEachPlayer([&](const PlayerCache& cache) {
+                    if (cache.address == sc.local) return;
+
+                    const Instance* p = part_instance(cache, part);
+                    if (!p || !g_Memory.IsValid(p->address)) return;
+
+                    BasePart      bp(p->address);
+                    const Vector3 world = bp.GetPosition();
+
+                    if (cfg.distance_check) {
+                        const float d = (world - sc.cam_pos).Length();
+                        if (d > cfg.max_distance) return;
+                    }
+
+                    Vector2 screen{};
+                    if (!world_to_screen(sc.view, sc.viewport, world, screen)) return;
+
+                    const float dx = screen.x - anchor_v.x;
+                    const float dy = screen.y - anchor_v.y;
+                    const float d  = std::sqrt(dx*dx + dy*dy);
+
+                    if (cfg.sticky && cache.address == s_target &&
+                        d <= fov_r * (std::max)(1.0f, cfg.sticky_fov_scale)) {
+                        found_sticky  = true;
+                        sticky_world  = world;
+                        sticky_screen = screen;
+                    }
+
+                    if (d < best_dist) {
+                        best_dist   = d;
+                        best_addr   = cache.address;
+                        best_world  = world;
+                        best_screen = screen;
+                        found_best  = true;
+                    }
+                });
+
+                if (found_sticky) {
+                    out_world  = sticky_world;
+                    out_screen = sticky_screen;
+                    return true;
+                }
+                if (!found_best) { s_pending = 0; return false; }
+
+                const double now = ImGui::GetTime();
+                if (cfg.humanize && cfg.reaction_ms > 0.0f && best_addr != s_target) {
+                    if (best_addr != s_pending) {
+                        s_pending   = best_addr;
+                        s_engage_at = now + cfg.reaction_ms / 1000.0;
+                        return false;
+                    }
+                    if (now < s_engage_at) return false;
+                }
+
+                s_target   = best_addr;
+                s_pending  = 0;
+                out_world  = best_world;
+                out_screen = best_screen;
+                return true;
+            }
+
+            void apply_mouse(const Config& cfg, const Vector2& target_screen, float dist01) {
+                POINT cur{};
+                if (!GetCursorPos(&cur)) return;
+
+                const float smooth = (std::max)(1.0f,
+                    cfg.smoothness * (std::max)(0.05f, Settings::sample_curve(cfg.smooth_curve, dist01)));
+                float dx = (target_screen.x - static_cast<float>(cur.x)) / smooth;
+                float dy = (target_screen.y - static_cast<float>(cur.y)) / smooth;
+
+                if (cfg.humanize) {
+                    const float jm = cfg.jitter * Settings::sample_curve(cfg.jitter_curve, dist01);
+                    dx += frand(jm);
+                    dy += frand(jm);
+                }
+
+                const int idx = static_cast<int>(std::lround(dx));
+                const int idy = static_cast<int>(std::lround(dy));
+                if (idx == 0 && idy == 0) return;
+
+                INPUT in{};
+                in.type = INPUT_MOUSE;
+                in.mi.dx = idx;
+                in.mi.dy = idy;
+                in.mi.dwFlags = MOUSEEVENTF_MOVE;
+                SendInput(1, &in, sizeof(in));
+            }
+
+            void apply_camera(const Config& cfg, const Scene& sc, const Vector3& target_world, float dist01) {
+                if (!g_Memory.IsValid(sc.camera.address)) return;
+
+                Vector3 want = (target_world - sc.cam_pos);
+                if (want.LengthSquared() < 1e-6f) return;
+                want.Normalize();
+
+                const Matrix4x4 cur = sc.camera.GetRotation();
+                Vector3 cur_look(-cur.m[0][2], -cur.m[1][2], -cur.m[2][2]);
+                if (cur_look.LengthSquared() < 1e-6f) cur_look = want;
+                cur_look.Normalize();
+
+                const float smooth = (std::max)(1.0f,
+                    cfg.smoothness * (std::max)(0.05f, Settings::sample_curve(cfg.smooth_curve, dist01)));
+                const float t = 1.0f / smooth;
+                Vector3 look = cur_look + (want - cur_look) * t;
+                if (cfg.humanize) {
+                    const float jm = cfg.jitter * Settings::sample_curve(cfg.jitter_curve, dist01) * 0.001f;
+                    look.x += frand(jm);
+                    look.y += frand(jm);
+                }
+                if (look.LengthSquared() < 1e-6f) return;
+                look.Normalize();
+
+                const Vector3 world_up(0.0f, 1.0f, 0.0f);
+                Vector3 right = look.Cross(world_up);
+                if (right.LengthSquared() < 1e-6f) right = Vector3(1.0f, 0.0f, 0.0f);
+                right.Normalize();
+                Vector3 up = right.Cross(look);
+                const Vector3 back = -look;
+
+                Matrix4x4 rot;
+                rot.m[0][0] = right.x; rot.m[0][1] = up.x; rot.m[0][2] = back.x;
+                rot.m[1][0] = right.y; rot.m[1][1] = up.y; rot.m[1][2] = back.y;
+                rot.m[2][0] = right.z; rot.m[2][1] = up.z; rot.m[2][2] = back.z;
+                sc.camera.SetRotation(rot);
+            }
+
+        }
+
+        void Aim::Render() {
+            Config& cfg = g_Settings.aim.active();
+
+            if (g_Settings.aim.type != 2)
+                draw_fov(cfg);
+
+            const int key = g_Settings.aim.bind;
+            if (key == 0) { s_was_pressed = false; s_toggled = false; return; }
+
+            const bool pressed = (GetAsyncKeyState(key) & 0x8000) != 0;
+            bool       active  = false;
+            if (g_Settings.aim.bind_mode == 1) {
+                if (pressed && !s_was_pressed) s_toggled = !s_toggled;
+                active = s_toggled;
+            } else {
+                active = pressed;
+            }
+            s_was_pressed = pressed;
+
+            if (!active) { s_target = 0; s_pending = 0; return; }
+            if (g_Settings.aim.type == 2) return;
+
+            const Scene sc = resolve_scene();
+            if (!sc.ok) return;
+
+            Vector3 world{};
+            Vector2 screen{};
+            if (!select_target(cfg, sc, world, screen)) return;
+
+            float dist01 = 0.0f;
+            if (cfg.max_distance > 1.0f)
+                dist01 = (world - sc.cam_pos).Length() / cfg.max_distance;
+
+            if (g_Settings.aim.type == 0) apply_mouse(cfg, screen, dist01);
+            else                          apply_camera(cfg, sc, world, dist01);
+        }
+
+        void Aim::mouse()    {}
+        void Aim::viewport() {}
+
+    }
+}

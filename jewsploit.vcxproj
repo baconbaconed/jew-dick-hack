@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{dd28dfe9-0940-4ee4-896d-2cb6396913c4}</ProjectGuid>
+    <RootNamespace>jewsploit</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)Cheat\GUI;$(ProjectDir)Cheat\GUI\FreeType\include;$(ProjectDir)Cheat\vendor\stb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)Cheat\GUI;$(ProjectDir)Cheat\GUI\FreeType\include;$(ProjectDir)Cheat\vendor\stb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)Cheat\GUI;$(ProjectDir)Cheat\GUI\FreeType\include;$(ProjectDir)Cheat\vendor\stb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /E /I /Y "$(ProjectDir)Cheat\Core\Features\Visuals\preview_model" "$(OutDir)preview_model\"</Command>
+    </PostBuildEvent>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)Cheat\GUI;$(ProjectDir)Cheat\GUI\FreeType\include;$(ProjectDir)Cheat\vendor\stb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /E /I /Y "$(ProjectDir)Cheat\Core\Features\Visuals\preview_model" "$(OutDir)preview_model\"</Command>
+    </PostBuildEvent>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="Cheat\Settings.h" />
+    <ClInclude Include="Cheat\Core\Globals\Globals.h" />
+    <ClInclude Include="Cheat\Core\Memory\Memory.h" />
+    <ClInclude Include="Cheat\Core\PlayerHandler\PlayerHandler.h" />
+    <ClInclude Include="Cheat\Core\Roblox\Engine\Classes\Classes.h" />
+    <ClInclude Include="Cheat\Core\Roblox\Engine\Enums\Enums.h" />
+    <ClInclude Include="Cheat\Core\Roblox\Engine\Offsets\Offsets.h" />
+    <ClInclude Include="Cheat\Core\Roblox\Math\Math.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\ESP.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\ESPPreview.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\ModelLoader.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\PreviewRenderer.h" />
+    <ClInclude Include="Cheat\Core\Features\Aim\Aim.h" />
+    <ClInclude Include="Cheat\Core\Features\Misc\Misc.h" />
+    <ClInclude Include="Cheat\Core\Features\Explorer\Explorer.h" />
+    <ClInclude Include="Cheat\Core\Graphics.h" />
+    <ClInclude Include="Cheat\vendor\stb\stb_image.h" />
+    <ClInclude Include="Cheat\Renderer\Renderer.h" />
+    <ClInclude Include="Cheat\GUI\Menu.h" />
+    <ClInclude Include="Cheat\GUI\colors\colors.h" />
+    <ClInclude Include="Cheat\GUI\animation\animation.h" />
+    <ClInclude Include="Cheat\GUI\resources\fonts\fonts.h" />
+    <ClInclude Include="Cheat\GUI\resources\fonts\font_tahoma.h" />
+    <ClInclude Include="Cheat\GUI\resources\fonts\font_tahoma_bold.h" />
+    <ClInclude Include="Cheat\GUI\widgets\widgets.h" />
+    <ClInclude Include="Cheat\GUI\widgets\tabs.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imconfig.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imgui.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imgui_internal.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imstb_rectpack.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imstb_textedit.h" />
+    <ClInclude Include="Cheat\GUI\imgui\imstb_truetype.h" />
+    <ClInclude Include="Cheat\GUI\imgui\backends\imgui_impl_dx11.h" />
+    <ClInclude Include="Cheat\GUI\imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="Cheat\GUI\imgui\misc\imgui_freetype.h" />
+    <ClInclude Include="Cheat\GUI\imgui\addons\imgui_addons.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Cheat\Renderer\Renderer.cpp" />
+    <ClCompile Include="Cheat\Core\Memory\Memory.cpp" />
+    <ClCompile Include="Cheat\Core\PlayerHandler\PlayerHandler.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\BasePart.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Camera.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Character.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\DataModel.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Humanoid.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Instance.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Lighting.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\MeshPart.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Model.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Player.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Players.cpp" />
+    <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Workspace.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\ESP.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\ESPPreview.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\ModelLoader.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\PreviewRenderer.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Aim\Aim.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Misc\Misc.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Explorer\Explorer.cpp" />
+    <ClCompile Include="Cheat\vendor\stb\stb_image_impl.cpp" />
+    <ClCompile Include="Cheat\GUI\Menu.cpp" />
+    <ClCompile Include="Cheat\GUI\colors\colors.cpp" />
+    <ClCompile Include="Cheat\GUI\animation\animation.cpp" />
+    <ClCompile Include="Cheat\GUI\resources\fonts\fonts.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\button.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\checkbox.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\slider.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\combo.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\watermark.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\child.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\curve.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\text.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\tabs.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\color.cpp" />
+    <ClCompile Include="Cheat\GUI\widgets\keybind.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\imgui.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\imgui_draw.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\imgui_tables.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\backends\imgui_impl_dx11.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\misc\imgui_freetype.cpp" />
+    <ClCompile Include="Cheat\GUI\imgui\addons\imgui_addons.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

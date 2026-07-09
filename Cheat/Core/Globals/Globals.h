@@ -1,0 +1,15 @@
+#pragma once
+#include <cstdint>
+#include "../Roblox/Engine/Classes/Classes.h"
+
+namespace Cheat
+{
+    namespace Globals
+    {
+        inline uintptr_t      ClientBase{ 0 };
+        inline uintptr_t      FrontDataModel{ 0 };
+        inline Cheat::DataModel  InstanceDataModel{};
+        inline std::shared_ptr<Cheat::Workspace> Workspace{};
+        inline std::shared_ptr<Cheat::Players>   Players{};
+    }
+}

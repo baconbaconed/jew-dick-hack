@@ -1,0 +1,380 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "widgets.h"
+#include "../colors/colors.h"
+#include "../resources/fonts/fonts.h"
+#include "imgui/imgui_internal.h"
+#include <cstdio>
+#include <cmath>
+#include <algorithm>
+
+namespace {
+
+    constexpr float k_color_size   = 12.0f;
+    constexpr float k_color_gap    = 4.0f;
+    constexpr float k_right_margin = 12.0f;
+
+    constexpr float k_pad        = 6.0f;
+    constexpr float k_gap        = 6.0f;
+    constexpr float k_sv_size    = 168.0f;
+    constexpr float k_bar_thick  = 16.0f;
+    constexpr float k_row_h      = 16.0f;
+    constexpr float k_border     = 2.0f;
+
+    constexpr ImU32 k_hdr[] = {
+        IM_COL32(28,29,28,255), IM_COL32(28,28,28,255),
+        IM_COL32(26,27,26,255), IM_COL32(26,27,26,255),
+        IM_COL32(27,27,26,255), IM_COL32(24,24,25,255),
+        IM_COL32(24,24,24,255), IM_COL32(24,24,24,255),
+        IM_COL32(22,22,23,255), IM_COL32(22,23,23,255),
+        IM_COL32(20,20,21,255), IM_COL32(20,20,21,255),
+        IM_COL32(21,21,20,255), IM_COL32(18,18,19,255),
+        IM_COL32(18,19,19,255), IM_COL32(18,19,19,255),
+        IM_COL32(16,17,16,255), IM_COL32(17,17,16,255),
+        IM_COL32(15,14,14,255),
+    };
+    constexpr int k_hdr_rows = IM_ARRAYSIZE(k_hdr);
+
+    constexpr float k_inner_w  = k_sv_size + k_gap + k_bar_thick;
+    constexpr float k_popup_w  = k_border * 2.0f + k_pad * 2.0f + k_inner_w;
+    constexpr float k_content_h= k_sv_size + k_gap + k_bar_thick + k_gap + k_row_h;
+    constexpr float k_popup_h  = k_border + (float)k_hdr_rows + 1.0f
+                               + k_pad + k_content_h + k_pad + k_border;
+
+    void frame3(ImDrawList* dl, const ImRect& outer)
+    {
+        const ImRect inner(outer.Min + ImVec2(1, 1), outer.Max - ImVec2(1, 1));
+        dl->AddRect(inner.Min, inner.Max, colors::widget_inline_u32(),  0.0f, 0, 1.0f);
+        dl->AddRect(outer.Min, outer.Max, colors::widget_outline_u32(), 0.0f, 0, 1.0f);
+    }
+
+    ImRect fill_of(const ImRect& outer)
+    {
+        return ImRect(outer.Min + ImVec2(2, 2), outer.Max - ImVec2(2, 2));
+    }
+
+    void draw_checkerboard(ImDrawList* dl, const ImRect& r, float cell = 4.0f)
+    {
+        const ImU32 c0 = IM_COL32(52, 52, 54, 255);
+        const ImU32 c1 = IM_COL32(28, 28, 30, 255);
+        dl->AddRectFilled(r.Min, r.Max, c0);
+        int row = 0;
+        for (float y = r.Min.y; y < r.Max.y; y += cell, ++row) {
+            const float y1 = ImMin(y + cell, r.Max.y);
+            int colIdx = row & 1;
+            for (float x = r.Min.x; x < r.Max.x; x += cell, ++colIdx) {
+                if (colIdx & 1) continue;
+                const float x1 = ImMin(x + cell, r.Max.x);
+                dl->AddRectFilled(ImVec2(x, y), ImVec2(x1, y1), c1);
+            }
+        }
+    }
+
+    void draw_sv_cursor(ImDrawList* dl, const ImVec2& c)
+    {
+        dl->AddCircle(c, 4.5f, IM_COL32(0, 0, 0, 255),   0, 2.0f);
+        dl->AddCircle(c, 3.5f, IM_COL32(255, 255, 255, 255), 0, 1.5f);
+    }
+
+    void draw_hbar_cursor(ImDrawList* dl, const ImRect& fill, float t)
+    {
+        const float y = ImClamp(fill.Min.y + t * fill.GetHeight(), fill.Min.y, fill.Max.y);
+        dl->AddRectFilled(ImVec2(fill.Min.x - 1.0f, y - 2.0f),
+                          ImVec2(fill.Max.x + 1.0f, y + 2.0f),
+                          IM_COL32(0, 0, 0, 255));
+        dl->AddRectFilled(ImVec2(fill.Min.x, y - 1.0f),
+                          ImVec2(fill.Max.x, y + 1.0f),
+                          IM_COL32(255, 255, 255, 255));
+    }
+
+    void draw_vbar_cursor(ImDrawList* dl, const ImRect& fill, float t)
+    {
+        const float x = ImClamp(fill.Min.x + t * fill.GetWidth(), fill.Min.x, fill.Max.x);
+        dl->AddRectFilled(ImVec2(x - 2.0f, fill.Min.y - 1.0f),
+                          ImVec2(x + 2.0f, fill.Max.y + 1.0f),
+                          IM_COL32(0, 0, 0, 255));
+        dl->AddRectFilled(ImVec2(x - 1.0f, fill.Min.y),
+                          ImVec2(x + 1.0f, fill.Max.y),
+                          IM_COL32(255, 255, 255, 255));
+    }
+
+    void draw_panel_frame(ImDrawList* dl, const ImVec2& min, const ImVec2& max,
+                          const char* title)
+    {
+        const int ol = (int)min.x,     ot = (int)min.y;
+        const int orr = (int)max.x - 1, ob = (int)max.y - 1;
+        const int fl = ol + 2, ft = ot + 1, fr = orr - 1;
+
+        dl->AddRectFilled(ImVec2((float)fl, (float)ft),
+                          ImVec2((float)(fr + 1), (float)ob),
+                          ImGui::GetColorU32(colors::child_fill));
+
+        for (int i = 0; i < k_hdr_rows; ++i)
+            dl->AddRectFilled(ImVec2((float)fl, (float)(ft + i)),
+                              ImVec2((float)(fr + 1), (float)(ft + i + 1)),
+                              k_hdr[i]);
+
+        dl->AddRectFilled(ImVec2((float)fl, (float)(ft + k_hdr_rows)),
+                          ImVec2((float)(fr + 1), (float)(ft + k_hdr_rows + 1)),
+                          colors::widget_inline_u32());
+
+        const ImU32 outline = colors::widget_outline_u32();
+        dl->AddRect(ImVec2((float)ol, (float)ot),
+                    ImVec2((float)(orr + 1), (float)(ob + 1)), outline, 0.0f, 0, 1.0f);
+
+        const ImU32 inl = colors::widget_inline_u32();
+        const int il = ol + 1, it = ot + 1, ir = orr - 1, ib = ob - 1;
+        dl->AddLine(ImVec2((float)il, (float)ib), ImVec2((float)ir, (float)ib), inl);
+        dl->AddLine(ImVec2((float)il, (float)it), ImVec2((float)il, (float)ib), inl);
+        dl->AddLine(ImVec2((float)ir, (float)it), ImVec2((float)ir, (float)ib), inl);
+
+        if (title && title[0]) {
+            ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+            const float fs = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
+                ? fonts::tahoma->LegacySize : 13.0f;
+            const ImVec2 tsz = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, title);
+            const ImVec2 tpos(ImFloor((float)fl + 6.0f),
+                              ImFloor((float)ft + ((float)k_hdr_rows - tsz.y) * 0.5f));
+            widgets::draw_outlined_text(dl, font, fs, tpos,
+                IM_COL32(255, 255, 255, 255), title);
+        }
+    }
+
+    struct hsv_cache {
+        ImGuiID id  = 0;
+        float   h = 0.0f, s = 0.0f, v = 0.0f;
+    };
+    hsv_cache g_hsv;
+
+    void sync_hsv(ImGuiID id, const float col[4])
+    {
+        float cr, cg, cb;
+        ImGui::ColorConvertHSVtoRGB(g_hsv.h, g_hsv.s, g_hsv.v, cr, cg, cb);
+        const bool mismatch = fabsf(cr - col[0]) > 0.002f
+                           || fabsf(cg - col[1]) > 0.002f
+                           || fabsf(cb - col[2]) > 0.002f;
+        if (g_hsv.id != id || mismatch) {
+            float h, s, v;
+            ImGui::ColorConvertRGBtoHSV(col[0], col[1], col[2], h, s, v);
+
+            if (s > 0.0001f || g_hsv.id != id) g_hsv.h = h;
+            if (v > 0.0001f || g_hsv.id != id) g_hsv.s = s;
+            g_hsv.v  = v;
+            g_hsv.id = id;
+        }
+    }
+}
+
+namespace widgets {
+
+    float color_picker_width() { return k_color_size; }
+
+    float color_picker_row_y()
+    {
+        return ImGui::GetItemRectMin().y - ImGui::GetWindowPos().y;
+    }
+
+    void same_line_color_picker(float row_y, int slot_from_right, int slot_count)
+    {
+        slot_count      = ImMax(1, slot_count);
+        slot_from_right = ImClamp(slot_from_right, 0, slot_count - 1);
+
+        const float group_w = slot_count * k_color_size + (slot_count - 1) * k_color_gap;
+        const float slot_x  = ImGui::GetWindowContentRegionMax().x
+                            - k_right_margin
+                            - group_w
+                            + slot_from_right * (k_color_size + k_color_gap);
+
+        ImGui::SameLine(slot_x);
+        ImGui::SetCursorPosY(row_y + 6.0f);
+    }
+
+    bool color_edit4(const char* id, float col[4])
+    {
+        if (!col || !id) return false;
+
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        if (!window || window->SkipItems) return false;
+
+        const ImGuiID widget_id = window->GetID(id);
+        const ImVec2  pos       = ImGui::GetCursorScreenPos();
+        const ImVec2  size(k_color_size, k_color_size);
+        const ImRect  bounds(pos, pos + size);
+
+        ImGui::ItemSize(size);
+        if (!ImGui::ItemAdd(bounds, widget_id)) return false;
+
+        bool hovered = false, held = false;
+        const bool pressed = ImGui::ButtonBehavior(bounds, widget_id, &hovered, &held);
+
+        {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImRect swf = fill_of(bounds);
+            if (col[3] < 0.999f) draw_checkerboard(dl, swf, 3.0f);
+            dl->AddRectFilled(swf.Min, swf.Max,
+                ImGui::ColorConvertFloat4ToU32(ImVec4(col[0], col[1], col[2], col[3])));
+            frame3(dl, bounds);
+        }
+
+        char popup_id[64];
+        snprintf(popup_id, sizeof(popup_id), "##cpop_%u", widget_id);
+        if (pressed) ImGui::OpenPopup(popup_id);
+
+        bool changed = false;
+
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border,  ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,   ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,  0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0.0f);
+
+        ImGui::SetNextWindowPos(ImVec2(bounds.Min.x, bounds.Max.y + 2.0f));
+        ImGui::SetNextWindowSize(ImVec2(k_popup_w, k_popup_h));
+
+        if (ImGui::BeginPopup(popup_id,
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove))
+        {
+            ImDrawList* dl   = ImGui::GetWindowDrawList();
+            const ImVec2 wp  = ImGui::GetWindowPos();
+            const ImVec2 wsz = ImGui::GetWindowSize();
+
+            draw_panel_frame(dl, wp, wp + wsz, "color picker");
+
+            sync_hsv(widget_id, col);
+            float& H = g_hsv.h;
+            float& S = g_hsv.s;
+            float& V = g_hsv.v;
+
+            const float cx = wp.x + k_border + k_pad;
+            const float cy = wp.y + k_border + (float)k_hdr_rows + 1.0f + k_pad;
+
+            const ImRect sv_outer (ImVec2(cx, cy),
+                                   ImVec2(cx + k_sv_size, cy + k_sv_size));
+            const ImRect hue_outer(ImVec2(sv_outer.Max.x + k_gap, cy),
+                                   ImVec2(sv_outer.Max.x + k_gap + k_bar_thick,
+                                          cy + k_sv_size));
+            const float  bar_y  = sv_outer.Max.y + k_gap;
+            const ImRect a_outer(ImVec2(cx, bar_y),
+                                 ImVec2(cx + k_inner_w, bar_y + k_bar_thick));
+            const float  row_y  = a_outer.Max.y + k_gap;
+
+            const ImRect sv_fill  = fill_of(sv_outer);
+            const ImRect hue_fill = fill_of(hue_outer);
+            const ImRect a_fill   = fill_of(a_outer);
+
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+
+            ImGui::SetCursorScreenPos(sv_outer.Min);
+            ImGui::InvisibleButton("##sv", sv_outer.GetSize());
+            if (ImGui::IsItemActive()) {
+                S = ImClamp((mouse.x - sv_fill.Min.x) / sv_fill.GetWidth(),  0.0f, 1.0f);
+                V = 1.0f - ImClamp((mouse.y - sv_fill.Min.y) / sv_fill.GetHeight(), 0.0f, 1.0f);
+                changed = true;
+            }
+
+            ImGui::SetCursorScreenPos(hue_outer.Min);
+            ImGui::InvisibleButton("##hue", hue_outer.GetSize());
+            if (ImGui::IsItemActive()) {
+                H = ImClamp((mouse.y - hue_fill.Min.y) / hue_fill.GetHeight(), 0.0f, 0.9999f);
+                changed = true;
+            }
+
+            ImGui::SetCursorScreenPos(a_outer.Min);
+            ImGui::InvisibleButton("##alpha", a_outer.GetSize());
+            if (ImGui::IsItemActive()) {
+                col[3] = ImClamp((mouse.x - a_fill.Min.x) / a_fill.GetWidth(), 0.0f, 1.0f);
+                changed = true;
+            }
+
+            if (changed)
+                ImGui::ColorConvertHSVtoRGB(H, S, V, col[0], col[1], col[2]);
+
+            {
+                float hr, hg, hb;
+                ImGui::ColorConvertHSVtoRGB(H, 1.0f, 1.0f, hr, hg, hb);
+                const ImU32 hue_col = ImGui::ColorConvertFloat4ToU32(ImVec4(hr, hg, hb, 1.0f));
+
+                dl->AddRectFilledMultiColor(sv_fill.Min, sv_fill.Max,
+                    IM_COL32(255,255,255,255), hue_col, hue_col, IM_COL32(255,255,255,255));
+                dl->AddRectFilledMultiColor(sv_fill.Min, sv_fill.Max,
+                    IM_COL32(0,0,0,0), IM_COL32(0,0,0,0),
+                    IM_COL32(0,0,0,255), IM_COL32(0,0,0,255));
+
+                frame3(dl, sv_outer);
+                draw_sv_cursor(dl, ImVec2(
+                    sv_fill.Min.x + S * sv_fill.GetWidth(),
+                    sv_fill.Min.y + (1.0f - V) * sv_fill.GetHeight()));
+            }
+
+            {
+                constexpr int seg = 6;
+                const float seg_h = hue_fill.GetHeight() / (float)seg;
+                for (int i = 0; i < seg; ++i) {
+                    float r0, g0, b0, r1, g1, b1;
+                    ImGui::ColorConvertHSVtoRGB((float)i       / seg, 1.0f, 1.0f, r0, g0, b0);
+                    ImGui::ColorConvertHSVtoRGB((float)(i + 1) / seg, 1.0f, 1.0f, r1, g1, b1);
+                    const ImU32 c0 = ImGui::ColorConvertFloat4ToU32(ImVec4(r0, g0, b0, 1.0f));
+                    const ImU32 c1 = ImGui::ColorConvertFloat4ToU32(ImVec4(r1, g1, b1, 1.0f));
+                    const float y0 = hue_fill.Min.y + seg_h * (float)i;
+                    dl->AddRectFilledMultiColor(
+                        ImVec2(hue_fill.Min.x, y0),
+                        ImVec2(hue_fill.Max.x, y0 + seg_h),
+                        c0, c0, c1, c1);
+                }
+                frame3(dl, hue_outer);
+                draw_hbar_cursor(dl, hue_fill, H);
+            }
+
+            {
+                draw_checkerboard(dl, a_fill);
+                const ImU32 a0 = ImGui::ColorConvertFloat4ToU32(ImVec4(col[0], col[1], col[2], 0.0f));
+                const ImU32 a1 = ImGui::ColorConvertFloat4ToU32(ImVec4(col[0], col[1], col[2], 1.0f));
+                dl->AddRectFilledMultiColor(a_fill.Min, a_fill.Max, a0, a1, a1, a0);
+                frame3(dl, a_outer);
+                draw_vbar_cursor(dl, a_fill, col[3]);
+            }
+
+            {
+                const ImRect prev_outer(ImVec2(cx, row_y),
+                                        ImVec2(cx + 34.0f, row_y + k_row_h));
+                const ImRect prev_fill = fill_of(prev_outer);
+                draw_checkerboard(dl, prev_fill);
+                dl->AddRectFilled(prev_fill.Min, prev_fill.Max,
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(col[0], col[1], col[2], col[3])));
+                frame3(dl, prev_outer);
+
+                ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+                const float fs = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
+                    ? fonts::tahoma->LegacySize : 13.0f;
+
+                char hex[16];
+                snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+                    (int)(col[0] * 255.0f + 0.5f),
+                    (int)(col[1] * 255.0f + 0.5f),
+                    (int)(col[2] * 255.0f + 0.5f));
+
+                const ImVec2 hsz = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, hex);
+                widgets::draw_outlined_text(dl, font, fs,
+                    ImVec2(ImFloor(prev_outer.Max.x + k_gap),
+                           ImFloor(row_y + (k_row_h - hsz.y) * 0.5f)),
+                    colors::text_active_u32(), hex);
+
+                char apct[16];
+                snprintf(apct, sizeof(apct), "%d%%", (int)(col[3] * 100.0f + 0.5f));
+                const ImVec2 asz = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, apct);
+                widgets::draw_outlined_text(dl, font, fs,
+                    ImVec2(ImFloor(cx + k_inner_w - asz.x),
+                           ImFloor(row_y + (k_row_h - asz.y) * 0.5f)),
+                    colors::text_inactive_u32(), apct);
+            }
+
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
+
+        if (changed) ImGui::MarkItemEdited(widget_id);
+        return changed;
+    }
+
+}

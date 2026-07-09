@@ -1,0 +1,23 @@
+#include "Classes.h"
+#include "../../../Memory/Memory.h"
+#include "../Offsets/Offsets.h"
+
+std::shared_ptr<Cheat::Instance> Cheat::Model::GetPrimaryPart() const
+{
+    if (!g_Memory.IsValid(address))
+        return nullptr;
+
+    std::uint64_t part_addr = g_Memory.Read<std::uint64_t>(address + Offsets::Model::PrimaryPart);
+    if (!g_Memory.IsValid(part_addr))
+        return nullptr;
+
+    return std::make_shared<Cheat::Instance>(part_addr);
+}
+
+float Cheat::Model::GetScale() const
+{
+    if (!g_Memory.IsValid(address))
+        return 1.f;
+
+    return g_Memory.Read<float>(address + Offsets::Model::Scale);
+}
