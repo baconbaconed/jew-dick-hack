@@ -261,7 +261,7 @@ namespace widgets {
             id,
             ImVec2(content_size.x, ImMax(0.0f, content_size.y - k_content_inset_y - header_height)),
             false,
-            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+            ImGuiWindowFlags_NoScrollbar);
     }
 
     void end_child_panel() {

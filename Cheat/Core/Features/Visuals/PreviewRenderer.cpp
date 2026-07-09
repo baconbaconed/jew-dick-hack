@@ -58,8 +58,8 @@ bool PreviewRenderer::Initialize(ID3D11Device* device, ID3D11DeviceContext* ctx,
 
     if (!CreateRenderTarget(rt_width, rt_height)) return false;
     if (!CreateShaders())                          return false;
-    if (!UploadModel(obj_path))                   return false;
-    if (!LoadTexture(tex_path))                   return false;
+    if (!obj_path.empty() && !UploadModel(obj_path))  return false;
+    if (!tex_path.empty() && !LoadTexture(tex_path))  return false;
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode        = D3D11_FILL_SOLID;
@@ -73,10 +73,10 @@ bool PreviewRenderer::Initialize(ID3D11Device* device, ID3D11DeviceContext* ctx,
     dd.DepthFunc      = D3D11_COMPARISON_LESS;
     m_Device->CreateDepthStencilState(&dd, &m_DSState);
 
-    D3D11_BLEND_DESC bd{};
-    bd.RenderTarget[0].BlendEnable           = FALSE;
-    bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    m_Device->CreateBlendState(&bd, &m_BlendState);
+    D3D11_BLEND_DESC bld{};
+    bld.RenderTarget[0].BlendEnable           = FALSE;
+    bld.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    m_Device->CreateBlendState(&bld, &m_BlendState);
 
     m_Ready = true;
     return true;
@@ -126,40 +126,68 @@ bool PreviewRenderer::CreateShaders()
     return SUCCEEDED(m_Device->CreateBuffer(&cbd, nullptr, &m_CB));
 }
 
+namespace {
+    static bool UploadVerts(ID3D11Device* dev, std::vector<ModelVertex>& verts,
+        float scale, float center[3], float joints[13][3], ID3D11Buffer** ppVB, unsigned int& vertCount)
+    {
+        vertCount = (unsigned int)verts.size();
+        D3D11_BUFFER_DESC bd{};
+        bd.ByteWidth = (UINT)(sizeof(ModelVertex) * verts.size());
+        bd.Usage = D3D11_USAGE_IMMUTABLE; bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        D3D11_SUBRESOURCE_DATA sd{}; sd.pSysMem = verts.data();
+        if (FAILED(dev->CreateBuffer(&bd, &sd, ppVB))) return false;
+
+        auto norm2raw = [&](float nx, float ny, float nz, float out[3]) {
+            out[0] = nx / scale + center[0];
+            out[1] = ny / scale + center[1];
+            out[2] = nz / scale + center[2];
+        };
+        norm2raw( 0.0000f,  0.4200f,  0.0000f, joints[ 0]);
+        norm2raw( 0.0000f,  0.3200f,  0.0000f, joints[ 1]);
+        norm2raw(-0.1290f,  0.2918f,  0.0176f, joints[ 2]);
+        norm2raw( 0.1176f,  0.2949f, -0.0125f, joints[ 3]);
+        norm2raw(-0.1635f,  0.0949f,  0.0027f, joints[ 4]);
+        norm2raw( 0.1527f,  0.1253f,  0.0092f, joints[ 5]);
+        norm2raw(-0.1571f, -0.0250f,  0.0439f, joints[ 6]);
+        norm2raw( 0.1547f, -0.0284f,  0.0241f, joints[ 7]);
+        norm2raw(-0.0093f, -0.0400f, -0.0021f, joints[ 8]);
+        norm2raw(-0.0590f, -0.2736f,  0.0146f, joints[ 9]);
+        norm2raw( 0.0713f, -0.2797f, -0.0065f, joints[10]);
+        norm2raw(-0.0537f, -0.4546f,  0.0039f, joints[11]);
+        norm2raw( 0.0625f, -0.4686f, -0.0057f, joints[12]);
+        return true;
+    }
+
+    static bool UploadTexture(ID3D11Device* dev, int w, int h, unsigned char* data,
+        ID3D11Texture2D** ppTex, ID3D11ShaderResourceView** ppSRV, ID3D11SamplerState** ppSamp)
+    {
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width=(UINT)w; td.Height=(UINT)h; td.MipLevels=1; td.ArraySize=1;
+        td.Format=DXGI_FORMAT_R8G8B8A8_UNORM; td.SampleDesc.Count=1;
+        td.Usage=D3D11_USAGE_IMMUTABLE; td.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA sd{}; sd.pSysMem=data; sd.SysMemPitch=(UINT)(w*4);
+        if (FAILED(dev->CreateTexture2D(&td, &sd, ppTex))) return false;
+        if (FAILED(dev->CreateShaderResourceView(*ppTex, nullptr, ppSRV))) return false;
+        D3D11_SAMPLER_DESC smd{};
+        smd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        smd.AddressU=smd.AddressV=smd.AddressW=D3D11_TEXTURE_ADDRESS_WRAP;
+        smd.ComparisonFunc=D3D11_COMPARISON_ALWAYS; smd.MaxLOD=D3D11_FLOAT32_MAX;
+        return SUCCEEDED(dev->CreateSamplerState(&smd, ppSamp));
+    }
+}
+
 bool PreviewRenderer::UploadModel(const std::string& obj_path)
 {
     std::vector<ModelVertex> verts;
     if (!LoadOBJ(obj_path, verts, m_ModelScale, m_ModelCenter, m_RawMin, m_RawMax, &m_UniquePos)) return false;
-    m_VertCount = (unsigned int)verts.size();
+    return UploadVerts(m_Device, verts, m_ModelScale, m_ModelCenter, m_Joints, &m_VB, m_VertCount);
+}
 
-    D3D11_BUFFER_DESC bd{};
-    bd.ByteWidth = (UINT)(sizeof(ModelVertex) * verts.size());
-    bd.Usage = D3D11_USAGE_IMMUTABLE; bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-
-    D3D11_SUBRESOURCE_DATA sd{}; sd.pSysMem = verts.data();
-    if (FAILED(m_Device->CreateBuffer(&bd, &sd, &m_VB))) return false;
-
-    auto norm2raw = [&](float nx, float ny, float nz, float out[3]) {
-        out[0] = nx / m_ModelScale + m_ModelCenter[0];
-        out[1] = ny / m_ModelScale + m_ModelCenter[1];
-        out[2] = nz / m_ModelScale + m_ModelCenter[2];
-    };
-
-    norm2raw( 0.0000f,  0.4200f,  0.0000f, m_Joints[ 0]);
-    norm2raw( 0.0000f,  0.3200f,  0.0000f, m_Joints[ 1]);
-    norm2raw(-0.1290f,  0.2918f,  0.0176f, m_Joints[ 2]);
-    norm2raw( 0.1176f,  0.2949f, -0.0125f, m_Joints[ 3]);
-    norm2raw(-0.1635f,  0.0949f,  0.0027f, m_Joints[ 4]);
-    norm2raw( 0.1527f,  0.1253f,  0.0092f, m_Joints[ 5]);
-    norm2raw(-0.1571f, -0.0250f,  0.0439f, m_Joints[ 6]);
-    norm2raw( 0.1547f, -0.0284f,  0.0241f, m_Joints[ 7]);
-    norm2raw(-0.0093f, -0.0400f, -0.0021f, m_Joints[ 8]);
-    norm2raw(-0.0590f, -0.2736f,  0.0146f, m_Joints[ 9]);
-    norm2raw( 0.0713f, -0.2797f, -0.0065f, m_Joints[10]);
-    norm2raw(-0.0537f, -0.4546f,  0.0039f, m_Joints[11]);
-    norm2raw( 0.0625f, -0.4686f, -0.0057f, m_Joints[12]);
-
-    return true;
+bool PreviewRenderer::UploadModelFromMemory(const char* obj_src, std::size_t obj_len)
+{
+    std::vector<ModelVertex> verts;
+    if (!LoadOBJFromMemory(obj_src, obj_len, verts, m_ModelScale, m_ModelCenter, m_RawMin, m_RawMax, &m_UniquePos)) return false;
+    return UploadVerts(m_Device, verts, m_ModelScale, m_ModelCenter, m_Joints, &m_VB, m_VertCount);
 }
 
 bool PreviewRenderer::LoadTexture(const std::string& tex_path)
@@ -167,25 +195,19 @@ bool PreviewRenderer::LoadTexture(const std::string& tex_path)
     int w, h, ch;
     unsigned char* data = stbi_load(tex_path.c_str(), &w, &h, &ch, 4);
     if (!data) return false;
-
-    D3D11_TEXTURE2D_DESC td{};
-    td.Width = (UINT)w; td.Height = (UINT)h; td.MipLevels = 1; td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM; td.SampleDesc.Count = 1;
-    td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    D3D11_SUBRESOURCE_DATA sd{}; sd.pSysMem = data; sd.SysMemPitch = (UINT)(w * 4);
-    HRESULT hr = m_Device->CreateTexture2D(&td, &sd, &m_TexRes);
+    bool ok = UploadTexture(m_Device, w, h, data, &m_TexRes, &m_TexSRV, &m_Sampler);
     stbi_image_free(data);
-    if (FAILED(hr)) return false;
+    return ok;
+}
 
-    hr = m_Device->CreateShaderResourceView(m_TexRes, nullptr, &m_TexSRV);
-    if (FAILED(hr)) return false;
-
-    D3D11_SAMPLER_DESC smd{};
-    smd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    smd.AddressU = smd.AddressV = smd.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-    smd.ComparisonFunc = D3D11_COMPARISON_ALWAYS; smd.MaxLOD = D3D11_FLOAT32_MAX;
-    return SUCCEEDED(m_Device->CreateSamplerState(&smd, &m_Sampler));
+bool PreviewRenderer::LoadTextureFromMemory(const unsigned char* png_data, std::size_t png_len)
+{
+    int w, h, ch;
+    unsigned char* data = stbi_load_from_memory(png_data, (int)png_len, &w, &h, &ch, 4);
+    if (!data) return false;
+    bool ok = UploadTexture(m_Device, w, h, data, &m_TexRes, &m_TexSRV, &m_Sampler);
+    stbi_image_free(data);
+    return ok;
 }
 
 void PreviewRenderer::AddRotationDelta(float dyaw, float dpitch)

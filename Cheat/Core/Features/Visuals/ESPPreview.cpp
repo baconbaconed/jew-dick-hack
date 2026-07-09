@@ -2,6 +2,8 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "ESPPreview.h"
 #include "PreviewRenderer.h"
+#include "preview_model/preview_model_obj.h"
+#include "preview_model/preview_model_texture.h"
 #include "../../Graphics.h"
 #include "../../../Settings.h"
 #include "../../../GUI/colors/colors.h"
@@ -34,21 +36,34 @@ namespace Cheat::Visuals {
     void ESPPreview::Initialize()
     {
         if (g_InitDone) return;
+        if (!Cheat::Core::g_Device || !Cheat::Core::g_DeviceContext) return;
 
-        auto base = ExeDir();
-        std::string obj = base + "\\preview_model\\model.obj";
-        std::string tex = base + "\\preview_model\\texture.png";
-        if (!std::filesystem::exists(obj)) {
-            obj = "Cheat\\Core\\Features\\Visuals\\preview_model\\model.obj";
-            tex = "Cheat\\Core\\Features\\Visuals\\preview_model\\texture.png";
+        if (!g_Renderer.Initialize(
+                Cheat::Core::g_Device, Cheat::Core::g_DeviceContext,
+                {}, {}, 360, 560))
+            return;
+
+        bool obj_ok = (g_PreviewModelOBJSize > 0) &&
+            g_Renderer.UploadModelFromMemory(
+                reinterpret_cast<const char*>(g_PreviewModelOBJData),
+                g_PreviewModelOBJSize);
+
+        bool tex_ok = g_Renderer.LoadTextureFromMemory(
+            g_PreviewModelTexture, g_PreviewModelTextureSize);
+
+        if (!obj_ok || !tex_ok) {
+            auto base = ExeDir();
+            std::string obj = base + "\\preview_model\\model.obj";
+            std::string tex = base + "\\preview_model\\texture.png";
+            if (!std::filesystem::exists(obj)) {
+                obj = "Cheat\\Core\\Features\\Visuals\\preview_model\\model.obj";
+                tex = "Cheat\\Core\\Features\\Visuals\\preview_model\\texture.png";
+            }
+            if (!obj_ok) g_Renderer.UploadModel(obj);
+            if (!tex_ok) g_Renderer.LoadTexture(tex);
         }
 
-        if (Cheat::Core::g_Device && Cheat::Core::g_DeviceContext) {
-            g_InitDone = g_Renderer.Initialize(
-                Cheat::Core::g_Device,
-                Cheat::Core::g_DeviceContext,
-                obj, tex, 360, 560);
-        }
+        g_InitDone = true;
     }
 
     void ESPPreview::Shutdown() { g_Renderer.Shutdown(); g_InitDone = false; }

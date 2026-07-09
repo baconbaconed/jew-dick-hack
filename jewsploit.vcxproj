@@ -166,10 +166,14 @@
     <ClInclude Include="Cheat\Core\Roblox\Engine\Offsets\Offsets.h" />
     <ClInclude Include="Cheat\Core\Roblox\Math\Math.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ESP.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_obj.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_texture.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ESPPreview.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ModelLoader.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\PreviewRenderer.h" />
     <ClInclude Include="Cheat\Core\Features\Aim\Aim.h" />
+    <ClInclude Include="Cheat\Core\Features\World\WorldVisuals.h" />
+    <ClInclude Include="Cheat\Core\Features\Local\LocalMods.h" />
     <ClInclude Include="Cheat\Core\Features\Misc\Misc.h" />
     <ClInclude Include="Cheat\Core\Features\Explorer\Explorer.h" />
     <ClInclude Include="Cheat\Core\Graphics.h" />
@@ -216,6 +220,8 @@
     <ClCompile Include="Cheat\Core\Features\Visuals\ModelLoader.cpp" />
     <ClCompile Include="Cheat\Core\Features\Visuals\PreviewRenderer.cpp" />
     <ClCompile Include="Cheat\Core\Features\Aim\Aim.cpp" />
+    <ClCompile Include="Cheat\Core\Features\World\WorldVisuals.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Local\LocalMods.cpp" />
     <ClCompile Include="Cheat\Core\Features\Misc\Misc.cpp" />
     <ClCompile Include="Cheat\Core\Features\Explorer\Explorer.cpp" />
     <ClCompile Include="Cheat\vendor\stb\stb_image_impl.cpp" />

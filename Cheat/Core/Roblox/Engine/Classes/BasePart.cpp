@@ -99,6 +99,22 @@ void Cheat::BasePart::SetAssemblyLinearVelocity(const Vector3& vel) const
     g_Memory.Write<Vector3>(prim + Offsets::Primitive::AssemblyLinearVelocity, vel);
 }
 
+void Cheat::BasePart::SetCanCollide(bool value) const
+{
+    if (!g_Memory.IsValid(address))
+        return;
+
+    std::uint64_t prim = GetPrimitive(address);
+    if (!g_Memory.IsValid(prim))
+        return;
+
+    std::uint8_t flags = g_Memory.Read<std::uint8_t>(prim + Offsets::Primitive::Flags);
+    const std::uint8_t bit = Offsets::PrimitiveFlags::CanCollide;
+    const std::uint8_t next = value ? (flags | bit) : (flags & ~bit);
+    if (next != flags)
+        g_Memory.Write<std::uint8_t>(prim + Offsets::Primitive::Flags, next);
+}
+
 Color3 Cheat::BasePart::GetColor() const
 {
     if (!g_Memory.IsValid(address))

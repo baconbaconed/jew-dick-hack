@@ -85,6 +85,8 @@ namespace Cheat {
 
             float jitter_curve[kAimCurvePoints]{ 0.15f, 0.30f, 0.50f, 0.68f, 0.85f, 1.0f };
             float smooth_curve[kAimCurvePoints]{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+
+            float fov_color[4]{ 0.20f, 0.478f, 0.906f, 0.86f };
         };
 
         struct {
@@ -120,7 +122,24 @@ namespace Cheat {
 
             bool  explorer{ false };
             bool  custom_support{ false };
+
+            int   freecam_key{ 0 };
+            int   freecam_mode{ 0 };
+            float freecam_speed{ 60.f };
+            float freecam_sens{ 0.30f };
+
+            bool  noclip{ false };
+            bool  inf_jump{ false };
         } misc;
+
+        struct {
+            bool  panel{ false };
+            bool  fullbright{ false };  float brightness{ 3.0f };
+            bool  ambient{ false };     float ambient_color[4]{ 1.f, 1.f, 1.f, 1.f };
+            bool  outdoor{ false };     float outdoor_color[4]{ 1.f, 1.f, 1.f, 1.f };
+            bool  fog{ false };         float fog_end{ 100000.f };
+            bool  fog_color_on{ false };float fog_color[4]{ 1.f, 1.f, 1.f, 1.f };
+        } wvis;
     };
 
     inline Settings g_Settings;

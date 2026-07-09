@@ -3,6 +3,8 @@
 #include "../../Memory/Memory.h"
 #include "../../Roblox/Engine/Offsets/Offsets.h"
 #include "../../Roblox/Engine/Classes/Classes.h"
+#include "../World/WorldVisuals.h"
+#include "../Local/LocalMods.h"
 #include "../../../Settings.h"
 #include <Windows.h>
 #include <timeapi.h>
@@ -24,6 +26,7 @@ struct MiscCache {
     std::uint64_t sky      = 0;
     std::uint64_t root     = 0;
     std::uint64_t humanoid = 0;
+    std::uint64_t character = 0;
     std::uint64_t last_refresh = 0;
 };
 MiscCache g_cache;
@@ -139,9 +142,11 @@ void Refresh()
         }
         g_cache.root = root;
         g_cache.humanoid = hum;
+        g_cache.character = character;
     } else {
         g_cache.root = 0;
         g_cache.humanoid = 0;
+        g_cache.character = 0;
     }
 }
 
@@ -158,6 +163,100 @@ bool CameraBasis(Vector3& fwd, Vector3& right, Vector3& up)
     right = Vector3( r.m[0][0],  r.m[1][0],  r.m[2][0]);
     up    = Vector3( r.m[0][1],  r.m[1][1],  r.m[2][1]);
     return true;
+}
+
+void Freecam(float dt)
+{
+    static bool    s_active   = false;
+    static bool    s_prevKey  = false;
+    static bool    s_engaged  = false;
+    static Vector3 s_savedOffset;
+    static bool    s_savedPlatform = false;
+    static bool    s_savedAutoRot  = true;
+    static Vector3 s_off;
+    static Vector3 s_world;
+
+    const auto& m = Cheat::g_Settings.misc;
+    const int key = m.freecam_key;
+
+    bool want = false;
+    if (key != 0) {
+        const bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
+        if (m.freecam_mode == 1) {
+            if (down && !s_prevKey) s_active = !s_active;
+            want = s_active;
+        } else {
+            want = down;
+        }
+        s_prevKey = down;
+    } else {
+        s_active = false;
+    }
+
+    const std::uint64_t hum = g_cache.humanoid;
+
+    if (!want || !g_Memory.IsValid(hum)) {
+        if (s_engaged && g_Memory.IsValid(hum)) {
+            g_Memory.Write<Vector3>(hum + Offsets::Humanoid::CameraOffset, s_savedOffset);
+            g_Memory.Write<bool>(hum + Offsets::Humanoid::PlatformStand, s_savedPlatform);
+            g_Memory.Write<bool>(hum + Offsets::Humanoid::AutoRotate, s_savedAutoRot);
+        }
+        s_engaged = false;
+        return;
+    }
+
+    if (!s_engaged) {
+        s_engaged       = true;
+        s_savedOffset   = g_Memory.Read<Vector3>(hum + Offsets::Humanoid::CameraOffset);
+        s_savedPlatform = g_Memory.Read<bool>(hum + Offsets::Humanoid::PlatformStand);
+        s_savedAutoRot  = g_Memory.Read<bool>(hum + Offsets::Humanoid::AutoRotate);
+        s_off           = Vector3(0.f, 0.f, 0.f);
+        s_world         = Vector3(0.f, 0.f, 0.f);
+    }
+
+    g_Memory.Write<bool>(hum + Offsets::Humanoid::PlatformStand, true);
+    g_Memory.Write<bool>(hum + Offsets::Humanoid::AutoRotate, false);
+
+    if (g_Memory.IsValid(g_cache.root)) {
+        Cheat::BasePart root(g_cache.root);
+        root.SetAssemblyLinearVelocity(Vector3(0.f, 0.f, 0.f));
+    }
+
+    Vector3 fwd, right, up;
+    if (!CameraBasis(fwd, right, up)) return;
+
+    const Vector3 world_up(0.f, 1.f, 0.f);
+
+    Vector3 world_dir(0.f, 0.f, 0.f);
+    if (GetAsyncKeyState('W') & 0x8000) world_dir += fwd;
+    if (GetAsyncKeyState('S') & 0x8000) world_dir -= fwd;
+    if (GetAsyncKeyState('D') & 0x8000) world_dir += right;
+    if (GetAsyncKeyState('A') & 0x8000) world_dir -= right;
+    if (GetAsyncKeyState(VK_SPACE)   & 0x8000) world_dir += world_up;
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) world_dir -= world_up;
+
+    float speed = m.freecam_speed;
+    if (GetAsyncKeyState(VK_SHIFT) & 0x8000) speed *= 3.0f;
+
+    if (world_dir.LengthSquared() > 0.01f)
+        s_world += world_dir.Normalized() * (speed * dt);
+
+    Vector3 cr_right(1.f, 0.f, 0.f), cr_up(0.f, 1.f, 0.f), cr_back(0.f, 0.f, 1.f);
+    if (g_Memory.IsValid(g_cache.root)) {
+        Cheat::BasePart root(g_cache.root);
+        Matrix4x4 cr = root.GetRotation();
+        cr_right = Vector3(cr.m[0][0], cr.m[1][0], cr.m[2][0]);
+        cr_up    = Vector3(cr.m[0][1], cr.m[1][1], cr.m[2][1]);
+        cr_back  = Vector3(cr.m[0][2], cr.m[1][2], cr.m[2][2]);
+    }
+
+    Vector3 local(
+        s_world.Dot(cr_right),
+        s_world.Dot(cr_up),
+        s_world.Dot(cr_back));
+
+    s_off = s_savedOffset + local;
+    g_Memory.Write<Vector3>(hum + Offsets::Humanoid::CameraOffset, s_off);
 }
 
 }
@@ -249,17 +348,36 @@ void Cheat::Features::Misc::Tick(float dt)
         }
     }
 
-    if (m.fov && Cheat::Globals::Workspace) {
-        auto cam = Cheat::Globals::Workspace->GetCurrentCamera();
-        if (cam) {
-            const std::uint64_t fov_addr = cam->address + Offsets::Camera::FieldOfView;
-            const float cur = g_Memory.Read<float>(fov_addr);
+    {
+        static bool  s_fov_has_orig = false;
+        static float s_fov_orig     = 70.0f;
 
-            const bool  is_radians = cur > 0.0f && cur < 3.2f;
-            const float target = is_radians ? m.fov_value * (kPi / 180.0f) : m.fov_value;
+        if (m.fov && Cheat::Globals::Workspace) {
+            auto cam = Cheat::Globals::Workspace->GetCurrentCamera();
+            if (cam) {
+                const std::uint64_t fov_addr = cam->address + Offsets::Camera::FieldOfView;
+                const float cur = g_Memory.Read<float>(fov_addr);
 
-            if (std::fabs(cur - target) > 0.0005f)
-                g_Memory.Write<float>(fov_addr, target);
+                const bool  is_radians = cur > 0.0f && cur < 3.2f;
+                const float target = is_radians ? m.fov_value * (kPi / 180.0f) : m.fov_value;
+
+                if (!s_fov_has_orig) {
+                    s_fov_orig     = is_radians ? cur * (180.0f / kPi) : cur;
+                    s_fov_has_orig = true;
+                }
+
+                if (std::fabs(cur - target) > 0.0005f)
+                    g_Memory.Write<float>(fov_addr, target);
+            }
+        } else if (s_fov_has_orig && Cheat::Globals::Workspace) {
+            if (auto cam = Cheat::Globals::Workspace->GetCurrentCamera()) {
+                const std::uint64_t fov_addr = cam->address + Offsets::Camera::FieldOfView;
+                const float cur = g_Memory.Read<float>(fov_addr);
+                const bool  is_radians = cur > 0.0f && cur < 3.2f;
+                const float restore = is_radians ? s_fov_orig * (kPi / 180.0f) : s_fov_orig;
+                g_Memory.Write<float>(fov_addr, restore);
+            }
+            s_fov_has_orig = false;
         }
     }
 
@@ -269,22 +387,22 @@ void Cheat::Features::Misc::Tick(float dt)
     }
 
     if (m.walkspeed && g_Memory.IsValid(g_cache.root) && g_Memory.IsValid(g_cache.humanoid)) {
-        Vector3 move_dir = g_Memory.Read<Vector3>(
-            g_cache.humanoid + Offsets::Humanoid::MoveDirection);
-        if (move_dir.LengthSquared() > 0.01f) {
-            move_dir = move_dir.Normalized();
-            BasePart root(g_cache.root);
-            if (m.walkspeed_mode == 0) {
-
-                Vector3 pos = root.GetPosition();
-                pos += move_dir * (m.walkspeed_value * dt);
-                root.SetPosition(pos);
-            } else {
-
-                Vector3 vel = root.GetAssemblyLinearVelocity();
-                Vector3 target(move_dir.x * m.walkspeed_value, vel.y,
-                               move_dir.z * m.walkspeed_value);
-                root.SetAssemblyLinearVelocity(target);
+        if (g_Memory.IsValid(g_cache.root)) {
+            Vector3 move_dir = g_Memory.Read<Vector3>(
+                g_cache.humanoid + Offsets::Humanoid::MoveDirection);
+            if (move_dir.LengthSquared() > 0.01f) {
+                move_dir = move_dir.Normalized();
+                BasePart root(g_cache.root);
+                if (m.walkspeed_mode == 0) {
+                    Vector3 pos = root.GetPosition();
+                    pos += move_dir * (m.walkspeed_value * dt);
+                    root.SetPosition(pos);
+                } else {
+                    Vector3 vel = root.GetAssemblyLinearVelocity();
+                    Vector3 target(move_dir.x * m.walkspeed_value, vel.y,
+                                   move_dir.z * m.walkspeed_value);
+                    root.SetAssemblyLinearVelocity(target);
+                }
             }
         }
     }
@@ -318,6 +436,12 @@ void Cheat::Features::Misc::Tick(float dt)
             }
         }
     }
+
+    Freecam(dt);
+
+    WorldVisuals::Apply(g_cache.lighting);
+    LocalMods::Noclip(g_cache.character, m.noclip);
+    LocalMods::InfiniteJump(g_cache.humanoid, m.inf_jump);
 }
 
 namespace {

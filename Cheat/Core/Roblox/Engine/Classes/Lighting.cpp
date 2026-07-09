@@ -105,3 +105,27 @@ void Cheat::Lighting::SetGlobalShadows(bool value) const
 
     g_Memory.Write<bool>(address + Offsets::Lighting::GlobalShadows, value);
 }
+
+void Cheat::Lighting::SetAmbient(const Color3& value) const
+{
+    if (!g_Memory.IsValid(address))
+        return;
+
+    g_Memory.Write<Color3>(address + Offsets::Lighting::Ambient, value);
+}
+
+void Cheat::Lighting::SetOutdoorAmbient(const Color3& value) const
+{
+    if (!g_Memory.IsValid(address))
+        return;
+
+    g_Memory.Write<Color3>(address + Offsets::Lighting::OutdoorAmbient, value);
+}
+
+void Cheat::Lighting::SetFogColor(const Color3& value) const
+{
+    if (!g_Memory.IsValid(address))
+        return;
+
+    g_Memory.Write<Color3>(address + Offsets::Lighting::FogColor, value);
+}

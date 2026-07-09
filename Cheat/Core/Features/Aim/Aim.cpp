@@ -76,9 +76,11 @@ namespace Cheat {
 
                 const ImVec2 center = fov_anchor(cfg);
                 const float  radius = (std::max)(1.0f, cfg.fov_size);
-                dl->AddCircle(center, radius + 1.0f, IM_COL32(0,   0,   0,   200), 64, 2.0f);
-                dl->AddCircle(center, radius,         IM_COL32(51, 122, 231, 220), 64, 1.0f);
-                dl->AddCircle(center, radius - 1.0f, IM_COL32(0,   0,   0,   100), 64, 1.0f);
+                const ImU32  col = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                    cfg.fov_color[0], cfg.fov_color[1], cfg.fov_color[2], cfg.fov_color[3]));
+                dl->AddCircle(center, radius + 1.0f, IM_COL32(0, 0, 0, 200), 64, 2.0f);
+                dl->AddCircle(center, radius,         col,                   64, 1.0f);
+                dl->AddCircle(center, radius - 1.0f, IM_COL32(0, 0, 0, 100), 64, 1.0f);
             }
 
             bool world_to_screen(const Matrix4x4& m, const Vector2& dim,

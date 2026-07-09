@@ -333,6 +333,9 @@ void Cheat::Visuals::ESP::Render()
 
             part_data.push_back({ pos, sz, rot, part.get() });
 
+            const bool is_hrp = (cache.humanoidRootPart &&
+                                 part.get() == cache.humanoidRootPart.get());
+
             Vector3 half = { sz.x / 2.0f, sz.y / 2.0f, sz.z / 2.0f };
 
             Vector3 corners[8] = {
@@ -347,7 +350,6 @@ void Cheat::Visuals::ESP::Render()
 
             for (auto& corner : corners)
             {
-
                 Vector3 world_corner = {
                     pos.x + (rot.m[0][0] * corner.x + rot.m[0][1] * corner.y + rot.m[0][2] * corner.z),
                     pos.y + (rot.m[1][0] * corner.x + rot.m[1][1] * corner.y + rot.m[1][2] * corner.z),
@@ -372,7 +374,7 @@ void Cheat::Visuals::ESP::Render()
                 ++idx;
             }
 
-            if (want_chams && pc.full)
+            if (want_chams && pc.full && !is_hrp)
                 chams_parts.push_back(pc);
         }
 

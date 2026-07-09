@@ -39,11 +39,14 @@ namespace Cheat::Core {
         bool IsReady() const { return m_Ready; }
         void Shutdown();
 
+        bool UploadModel(const std::string& obj_path);
+        bool UploadModelFromMemory(const char* obj_src, std::size_t obj_len);
+        bool LoadTexture(const std::string& tex_path);
+        bool LoadTextureFromMemory(const unsigned char* png_data, std::size_t png_len);
+
     private:
         bool CreateRenderTarget(unsigned int w, unsigned int h);
         bool CreateShaders();
-        bool UploadModel(const std::string& obj_path);
-        bool LoadTexture(const std::string& tex_path);
 
         ID3D11Device*              m_Device        = nullptr;
         ID3D11DeviceContext*       m_Ctx            = nullptr;

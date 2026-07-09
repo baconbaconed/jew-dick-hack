@@ -98,6 +98,7 @@ namespace Cheat {
         Vector3 GetAssemblyAngularVelocity() const;
         void    SetPosition(const Vector3& pos)               const;
         void    SetAssemblyLinearVelocity(const Vector3& vel) const;
+        void    SetCanCollide(bool value)                     const;
         Color3  GetColor()                 const;
         float   GetTransparency()          const;
         float   GetReflectance()           const;
@@ -200,6 +201,9 @@ namespace Cheat {
         void SetFogStart(float value)     const;
         void SetFogEnd(float value)       const;
         void SetGlobalShadows(bool value) const;
+        void SetAmbient(const Color3& value)        const;
+        void SetOutdoorAmbient(const Color3& value) const;
+        void SetFogColor(const Color3& value)       const;
     };
 
 }
