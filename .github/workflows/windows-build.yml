@@ -1,0 +1,27 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Navigate to Workspace and Build
+      run: |
+        msbuild /p:Configuration=Release /p:Platform=x64 jewsploit.vcxproj
+
+    - name: Upload Compiled Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: Compiled-App
+        path: |
+          **/Release/
+          **/x64/Release/
