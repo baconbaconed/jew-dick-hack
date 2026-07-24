@@ -371,7 +371,8 @@ void Menu::DrawMenu()
                 : 13.0f;
 
             auto make_side_child_size = [&](int columns) -> ImVec2 {
-                const int cols = columns < 1 ? 1 : columns;
+                int cols = columns < 1 ? 1 : columns;
+                if (cols > 2) cols = 2;
                 const float gaps = k_side_child_gap * static_cast<float>(cols - 1);
                 const float column_w = (inner_w - gaps) / static_cast<float>(cols);
                 return ImVec2(ImMax(k_side_child_w_min, column_w), side_child_h);
@@ -702,7 +703,7 @@ void Menu::DrawMenu()
                 }
                 widgets::end_child_panel();
 
-                if (draw_side_child("aim_extra", "extra", aim_right_pos, aim_child_size)) {
+                if (draw_side_child("aim_combat", "combat", aim_right_pos, aim_child_size)) {
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                     {
@@ -820,12 +821,9 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::slider_float("fog end", &g_Settings.world.fog_end, 0.0f, 100000.0f, "%.0f");
-                }
-                widgets::end_child_panel();
 
-                if (draw_side_child("misc_local", "local", misc_right_pos, misc_child_size)) {
                     ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::checkbox("fps unlocker", &g_Settings.misc.fps_unlock);
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
@@ -837,9 +835,12 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::slider_float("fov value", &g_Settings.misc.fov_value, 10.0f, 120.0f, "%.0f");
+                }
+                widgets::end_child_panel();
 
+                if (draw_side_child("misc_local", "local", misc_right_pos, misc_child_size)) {
                     ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                     widgets::checkbox("walkspeed", &g_Settings.misc.walkspeed);
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
