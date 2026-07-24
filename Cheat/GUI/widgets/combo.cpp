@@ -1,4 +1,5 @@
 #include "widgets.h"
+#include "../colors/colors.h"
 #include "../resources/fonts/fonts.h"
 #include "imgui/imgui_internal.h"
 #include <cstdio>
@@ -27,8 +28,6 @@ namespace {
     constexpr ImU32 k_fill = IM_COL32(18, 19, 19, 255);
     constexpr ImU32 k_text_inactive = IM_COL32(100, 100, 100, 255);
     constexpr ImU32 k_text_hover = IM_COL32(255, 255, 255, 255);
-    constexpr ImU32 k_text_selected = IM_COL32(100, 160, 245, 255);
-    constexpr ImU32 k_accent = IM_COL32(51, 122, 231, 255);
 
     void draw_framed_box(ImDrawList* draw_list, const ImVec2& min, const ImVec2& max) {
         const ImRect outer_rect(min, max);
@@ -143,7 +142,7 @@ namespace widgets {
             ImVec2(
                 ImFloor(box_max.x - icon_size.x - k_text_pad_x),
                 ImFloor(box_min.y + (k_combo_height - icon_size.y) * 0.5f)),
-            k_accent,
+            colors::accent_u32(),
             icon);
 
         ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -152,8 +151,15 @@ namespace widgets {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0.0f);
 
+        bool value_changed = false;
+
+        constexpr float k_popup_max_rows = 12.0f;
+        const float content_h = items_count * k_item_height;
+        const float popup_h = ImMin(content_h, k_item_height * k_popup_max_rows);
+        const bool need_scroll = content_h > popup_h + 0.5f;
+
         ImGui::SetNextWindowPos(ImVec2(box_min.x, box_max.y + 1.0f));
-        ImGui::SetNextWindowSize(ImVec2(box_width, items_count * k_item_height));
+        ImGui::SetNextWindowSize(ImVec2(box_width, popup_h));
         if (ImGui::BeginPopup(popup_id, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove)) {
             ImDrawList* popup_draw = ImGui::GetWindowDrawList();
             const ImVec2 popup_min = ImGui::GetWindowPos();
@@ -163,11 +169,32 @@ namespace widgets {
 
             draw_framed_box(popup_draw, popup_min, popup_max);
 
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0.07f, 0.07f, 0.07f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0.35f, 0.35f, 0.35f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0.45f, 0.45f, 0.45f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0f);
+
+            ImGuiWindowFlags child_flags = ImGuiWindowFlags_NoBackground;
+            if (!need_scroll)
+                child_flags |= ImGuiWindowFlags_NoScrollbar;
+
+            ImGui::SetCursorPos(ImVec2(0.0f, 0.0f));
+            ImGui::BeginChild("##combo_list", ImVec2(box_width, popup_h), false, child_flags);
+            ImDrawList* list_draw = ImGui::GetWindowDrawList();
+
+            if (ImGui::IsWindowAppearing() && need_scroll && *current_item > 0) {
+                ImGui::SetScrollY((float)*current_item * k_item_height - popup_h * 0.35f);
+            }
+
             for (int i = 0; i < items_count; ++i) {
                 const char* item_text = items[i] != nullptr ? items[i] : "";
                 ImGui::SetCursorPosY(i * k_item_height);
-                if (ImGui::InvisibleButton(item_text, ImVec2(box_width, k_item_height))) {
+                char item_id[64];
+                ImFormatString(item_id, IM_ARRAYSIZE(item_id), "##ci%d", i);
+                if (ImGui::InvisibleButton(item_id, ImVec2(box_width - (need_scroll ? 8.0f : 0.0f), k_item_height))) {
                     *current_item = i;
+                    value_changed = true;
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -176,7 +203,7 @@ namespace widgets {
                 const bool item_selected = (*current_item == i);
                 ImU32 item_color = k_text_inactive;
                 if (item_selected) {
-                    item_color = k_text_selected;
+                    item_color = colors::accent_u32();
                 } else if (item_hovered) {
                     item_color = k_text_hover;
                 }
@@ -193,7 +220,7 @@ namespace widgets {
                         0.0f,
                         k_selected_marker);
                     draw_outlined_text(
-                        popup_draw,
+                        list_draw,
                         label_font,
                         label_font_size,
                         ImVec2(ImFloor(item_min.x + k_text_pad_x), item_text_y),
@@ -203,7 +230,7 @@ namespace widgets {
                 }
 
                 draw_outlined_text(
-                    popup_draw,
+                    list_draw,
                     label_font,
                     label_font_size,
                     ImVec2(ImFloor(item_text_x), item_text_y),
@@ -211,13 +238,18 @@ namespace widgets {
                     item_text);
             }
 
+            ImGui::EndChild();
+
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(4);
+
             ImGui::EndPopup();
         }
 
         ImGui::PopStyleVar(3);
         ImGui::PopStyleColor(2);
 
-        return pressed;
+        return value_changed;
     }
 
     static void build_multi_preview(
@@ -357,7 +389,7 @@ namespace widgets {
             ImVec2(
                 ImFloor(box_max.x - icon_size.x - k_text_pad_x),
                 ImFloor(box_min.y + (k_combo_height - icon_size.y) * 0.5f)),
-            k_accent,
+            colors::accent_u32(),
             icon);
 
         bool value_changed = false;
@@ -396,7 +428,7 @@ namespace widgets {
                 const bool item_hovered = ImGui::IsItemHovered();
                 ImU32 item_color = k_text_inactive;
                 if (item_shown) {
-                    item_color = k_text_selected;
+                    item_color = colors::accent_u32();
                 } else if (item_hovered) {
                     item_color = k_text_hover;
                 }

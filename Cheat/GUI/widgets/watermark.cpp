@@ -1,4 +1,5 @@
 #include "widgets.h"
+#include "../colors/colors.h"
 #include "../resources/fonts/fonts.h"
 #include "imgui/imgui_internal.h"
 #include <cstdio>
@@ -9,10 +10,6 @@ namespace {
     constexpr float k_segment_gap = 8.0f;
 
     constexpr ImU32 k_outline = IM_COL32(0, 0, 0, 255);
-    constexpr ImU32 k_inline_border = IM_COL32(31, 30, 31, 255);
-    constexpr ImU32 k_fill_top = IM_COL32(17, 17, 16, 255);
-    constexpr ImU32 k_fill_bot = IM_COL32(15, 14, 14, 255);
-    constexpr ImU32 k_accent = IM_COL32(51, 122, 231, 255);
     constexpr ImU32 k_text_muted = IM_COL32(100, 100, 100, 255);
     constexpr ImU32 k_text_bright = IM_COL32(255, 255, 255, 255);
 
@@ -55,7 +52,7 @@ namespace widgets {
             : brand_font_size;
 
         const widgets::text_span brand_spans[] = {
-            {"jew",    with_alpha(k_accent, alpha)},
+            {"jew",    with_alpha(colors::accent_u32(), alpha)},
             {"sploit", with_alpha(k_text_bright, alpha)},
         };
 
@@ -77,18 +74,14 @@ namespace widgets {
         const ImVec2 origin(k_position.x - intro_slide, k_position.y);
         const ImVec2 rect_max(origin.x + total_w, origin.y + total_h);
 
-        draw_list->AddRectFilledMultiColor(
-            origin,
-            rect_max,
-            with_alpha(k_fill_top, alpha),
-            with_alpha(k_fill_top, alpha),
-            with_alpha(k_fill_bot, alpha),
-            with_alpha(k_fill_bot, alpha));
+        const ImU32 fill_top = with_alpha(ImGui::ColorConvertFloat4ToU32(colors::panel_fill), alpha);
+        const ImU32 fill_bot = with_alpha(ImGui::ColorConvertFloat4ToU32(colors::child_fill), alpha);
+        draw_list->AddRectFilledMultiColor(origin, rect_max, fill_top, fill_top, fill_bot, fill_bot);
         draw_list->AddRect(origin, rect_max, with_alpha(k_outline, alpha), 0.0f, 0, 1.0f);
         draw_list->AddRect(
             ImVec2(origin.x + 1.0f, origin.y + 1.0f),
             ImVec2(rect_max.x - 1.0f, rect_max.y - 1.0f),
-            with_alpha(k_inline_border, alpha),
+            with_alpha(ImGui::ColorConvertFloat4ToU32(colors::inner_border), alpha),
             0.0f,
             0,
             1.0f);

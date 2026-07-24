@@ -10,35 +10,32 @@ namespace fonts {
     ImFont* esp_bold = nullptr;
 
     void load(ImGuiIO& io) {
-        const unsigned int freetype_flags =
-            ImGuiFreeTypeLoaderFlags_MonoHinting | ImGuiFreeTypeLoaderFlags_Monochrome;
+        const unsigned int mono_flags =
+            ImGuiFreeTypeLoaderFlags_MonoHinting |
+            ImGuiFreeTypeLoaderFlags_Monochrome;
 
         io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
-
         io.Fonts->FontLoaderFlags = 0;
 
         ImFontConfig cfg{};
         cfg.PixelSnapH = true;
-        cfg.OversampleH = 2;
+        cfg.OversampleH = 1;
         cfg.OversampleV = 1;
-        cfg.RasterizerMultiply = 1.05f;
-        cfg.FontLoaderFlags = freetype_flags;
+        cfg.RasterizerMultiply = 1.0f;
+        cfg.FontLoaderFlags = mono_flags;
         cfg.FontDataOwnedByAtlas = false;
 
         tahoma = io.Fonts->AddFontFromMemoryTTF(Tahoma, sizeof(Tahoma), 13.0f, &cfg);
 
         ImFontConfig bold_cfg = cfg;
-        tahoma_bold = io.Fonts->AddFontFromMemoryTTF(TahomaBold, sizeof(TahomaBold), 13.0f, &bold_cfg);
+        bold_cfg.FontLoaderFlags =
+            mono_flags | ImGuiFreeTypeLoaderFlags_ForceAutoHint;
+        bold_cfg.RasterizerMultiply = 0.88f;
+        tahoma_bold = io.Fonts->AddFontFromMemoryTTF(
+            TahomaBold, sizeof(TahomaBold), 13.0f, &bold_cfg);
 
-        ImFontConfig esp_cfg{};
-        esp_cfg.PixelSnapH = true;
-        esp_cfg.OversampleH = 2;
-        esp_cfg.OversampleV = 1;
-        esp_cfg.FontDataOwnedByAtlas = false;
-        esp_cfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
-
-        esp      = io.Fonts->AddFontFromMemoryTTF(Tahoma,     sizeof(Tahoma),     14.0f, &esp_cfg);
-        esp_bold = io.Fonts->AddFontFromMemoryTTF(TahomaBold, sizeof(TahomaBold), 14.0f, &esp_cfg);
+        esp      = tahoma;
+        esp_bold = tahoma_bold;
 
         if (tahoma) {
             io.FontDefault = tahoma;

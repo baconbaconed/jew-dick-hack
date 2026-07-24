@@ -82,7 +82,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;winmm.lib;msacm32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
@@ -103,7 +103,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;winmm.lib;msacm32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
@@ -122,12 +122,9 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;winmm.lib;msacm32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /E /I /Y "$(ProjectDir)Cheat\Core\Features\Visuals\preview_model" "$(OutDir)preview_model\"</Command>
-    </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
@@ -146,12 +143,9 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;d3dcompiler.lib;dwmapi.lib;freetype.lib;winmm.lib;msacm32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)Cheat\GUI\FreeType\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /E /I /Y "$(ProjectDir)Cheat\Core\Features\Visuals\preview_model" "$(OutDir)preview_model\"</Command>
-    </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
@@ -166,15 +160,22 @@
     <ClInclude Include="Cheat\Core\Roblox\Engine\Offsets\Offsets.h" />
     <ClInclude Include="Cheat\Core\Roblox\Math\Math.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ESP.h" />
-    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_obj.h" />
-    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_texture.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\ShaderChams.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\KillEffects.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ESPPreview.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\ModelLoader.h" />
     <ClInclude Include="Cheat\Core\Features\Visuals\PreviewRenderer.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_obj.h" />
+    <ClInclude Include="Cheat\Core\Features\Visuals\preview_model\preview_model_texture.h" />
     <ClInclude Include="Cheat\Core\Features\Aim\Aim.h" />
+    <ClInclude Include="Cheat\Core\Features\Aim\RaycastSilent.h" />
+    <ClInclude Include="Cheat\Core\Features\Aim\MagicBullet.h" />
     <ClInclude Include="Cheat\Core\Features\World\WorldVisuals.h" />
     <ClInclude Include="Cheat\Core\Features\Local\LocalMods.h" />
     <ClInclude Include="Cheat\Core\Features\Misc\Misc.h" />
+    <ClInclude Include="Cheat\Core\Features\Misc\HitSounds.h" />
+    <ClInclude Include="Cheat\Core\Features\Misc\hitsounds_data.h" />
+    <ClInclude Include="Cheat\Core\Features\Misc\hitsounds_res.h" />
     <ClInclude Include="Cheat\Core\Features\Explorer\Explorer.h" />
     <ClInclude Include="Cheat\Core\Graphics.h" />
     <ClInclude Include="Cheat\vendor\stb\stb_image.h" />
@@ -216,13 +217,19 @@
     <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Players.cpp" />
     <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\Workspace.cpp" />
     <ClCompile Include="Cheat\Core\Features\Visuals\ESP.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\ShaderChams.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Visuals\KillEffects.cpp" />
     <ClCompile Include="Cheat\Core\Features\Visuals\ESPPreview.cpp" />
     <ClCompile Include="Cheat\Core\Features\Visuals\ModelLoader.cpp" />
     <ClCompile Include="Cheat\Core\Features\Visuals\PreviewRenderer.cpp" />
     <ClCompile Include="Cheat\Core\Features\Aim\Aim.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Aim\RaycastSilent.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Aim\MagicBullet.cpp" />
     <ClCompile Include="Cheat\Core\Features\World\WorldVisuals.cpp" />
     <ClCompile Include="Cheat\Core\Features\Local\LocalMods.cpp" />
     <ClCompile Include="Cheat\Core\Features\Misc\Misc.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Misc\HitSounds.cpp" />
+    <ClCompile Include="Cheat\Core\Features\Misc\hitsounds_data.cpp" />
     <ClCompile Include="Cheat\Core\Features\Explorer\Explorer.cpp" />
     <ClCompile Include="Cheat\vendor\stb\stb_image_impl.cpp" />
     <ClCompile Include="Cheat\GUI\Menu.cpp" />
@@ -235,7 +242,6 @@
     <ClCompile Include="Cheat\GUI\widgets\combo.cpp" />
     <ClCompile Include="Cheat\GUI\widgets\watermark.cpp" />
     <ClCompile Include="Cheat\GUI\widgets\child.cpp" />
-    <ClCompile Include="Cheat\GUI\widgets\curve.cpp" />
     <ClCompile Include="Cheat\GUI\widgets\text.cpp" />
     <ClCompile Include="Cheat\GUI\widgets\tabs.cpp" />
     <ClCompile Include="Cheat\GUI\widgets\color.cpp" />
@@ -248,6 +254,11 @@
     <ClCompile Include="Cheat\GUI\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="Cheat\GUI\imgui\misc\imgui_freetype.cpp" />
     <ClCompile Include="Cheat\GUI\imgui\addons\imgui_addons.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Cheat\Core\Features\Misc\hitsounds.rc">
+      <AdditionalIncludeDirectories>$(ProjectDir)Cheat\Core\Features\Misc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

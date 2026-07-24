@@ -1,4 +1,5 @@
 #include "widgets.h"
+#include "../resources/fonts/fonts.h"
 #include "imgui/imgui_internal.h"
 #include <cmath>
 
@@ -77,6 +78,7 @@ namespace widgets {
             return;
         }
 
+        font_size = fonts::snap_px(font_size);
         pos.x = ImFloor(pos.x);
         pos.y = ImFloor(pos.y);
 

@@ -22,8 +22,6 @@ namespace {
 struct MiscCache {
     std::uint64_t datamodel = 0;
     std::uint64_t lighting = 0;
-    std::uint64_t terrain  = 0;
-    std::uint64_t sky      = 0;
     std::uint64_t root     = 0;
     std::uint64_t humanoid = 0;
     std::uint64_t character = 0;
@@ -32,30 +30,6 @@ struct MiscCache {
 MiscCache g_cache;
 
 constexpr float kPi = 3.14159265358979f;
-
-std::uint64_t RenderView()
-{
-    static const uintptr_t base = g_Memory.GetModuleBase();
-    if (!base) return 0;
-    const std::uint64_t ve = g_Memory.Read<std::uint64_t>(base + Offsets::VisualEngine::Pointer);
-    if (!g_Memory.IsValid(ve)) return 0;
-    const std::uint64_t rv = g_Memory.Read<std::uint64_t>(ve + Offsets::VisualEngine::RenderView);
-    return g_Memory.IsValid(rv) ? rv : 0;
-}
-
-void InvalidateLighting()
-{
-    if (const std::uint64_t rv = RenderView())
-        g_Memory.Write<std::uint8_t>(rv + Offsets::RenderView::LightingValid, 0);
-}
-
-void InvalidateSky()
-{
-    if (const std::uint64_t rv = RenderView()) {
-        g_Memory.Write<std::uint8_t>(rv + Offsets::RenderView::SkyValid, 0);
-        g_Memory.Write<std::uint8_t>(rv + Offsets::RenderView::LightingValid, 0);
-    }
-}
 
 template <typename T>
 bool WriteIfChanged(std::uint64_t addr, T value)
@@ -99,33 +73,10 @@ void Refresh()
     if (g_cache.datamodel != Cheat::Globals::InstanceDataModel.address) {
         g_cache.datamodel = Cheat::Globals::InstanceDataModel.address;
         g_cache.lighting = 0;
-        g_cache.terrain  = 0;
-        g_cache.sky      = 0;
     }
 
-    if (!g_Memory.IsValid(g_cache.lighting)) {
+    if (!g_Memory.IsValid(g_cache.lighting))
         g_cache.lighting = FindServiceByClass("Lighting");
-        g_cache.sky = 0;
-    }
-    if (g_Memory.IsValid(g_cache.lighting) && !g_Memory.IsValid(g_cache.sky)) {
-        Cheat::Instance lighting(g_cache.lighting);
-        for (const auto& child : lighting.GetChildren()) {
-            if (child.GetClassName() == "Sky") { g_cache.sky = child.address; break; }
-        }
-
-        if (!g_Memory.IsValid(g_cache.sky)) {
-            const std::uint64_t sky = g_Memory.Read<std::uint64_t>(
-                g_cache.lighting + Offsets::Lighting::Sky);
-            if (g_Memory.IsValid(sky) && Cheat::Instance(sky).GetClassName() == "Sky")
-                g_cache.sky = sky;
-        }
-    }
-
-    if (Cheat::Globals::Workspace && !g_Memory.IsValid(g_cache.terrain)) {
-        for (const auto& child : Cheat::Globals::Workspace->GetChildren()) {
-            if (child.GetClassName() == "Terrain") { g_cache.terrain = child.address; break; }
-        }
-    }
 
     std::uint64_t character = LocalCharacter();
     if (g_Memory.IsValid(character)) {
@@ -265,35 +216,9 @@ void Cheat::Features::Misc::Tick(float dt)
 {
     if (!Cheat::Globals::InstanceDataModel.address) return;
 
-    const auto& w = Cheat::g_Settings.world;
     const auto& m = Cheat::g_Settings.misc;
 
     Refresh();
-
-    if (w.time && g_Memory.IsValid(g_cache.lighting)) {
-
-        if (WriteIfChanged<float>(g_cache.lighting + Offsets::Lighting::ClockTime,
-                                  w.time_value * kPi))
-            InvalidateLighting();
-    }
-
-    if (w.grass && g_Memory.IsValid(g_cache.terrain)) {
-        if (WriteIfChanged<float>(g_cache.terrain + Offsets::Terrain::GrassLength,
-                                  w.grass_length))
-            InvalidateLighting();
-    }
-
-    if (g_Memory.IsValid(g_cache.sky)) {
-        bool sky_dirty = false;
-        if (w.stars)
-            sky_dirty |= WriteIfChanged<int>(g_cache.sky + Offsets::Sky::StarCount, w.star_count);
-        if (w.sun)
-            sky_dirty |= WriteIfChanged<float>(g_cache.sky + Offsets::Sky::SunAngularSize, w.sun_size);
-        if (w.moon)
-            sky_dirty |= WriteIfChanged<float>(g_cache.sky + Offsets::Sky::MoonAngularSize, w.moon_size);
-        if (sky_dirty)
-            InvalidateSky();
-    }
 
     {
         static std::uint64_t s_scheduler    = 0;

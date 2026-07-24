@@ -9,10 +9,15 @@
 #include "imgui/backends/imgui_impl_win32.h"
 #include "imgui/misc/imgui_freetype.h"
 #include "../Settings.h"
+#include "../Renderer/Renderer.h"
 #include "../Core/Features/Visuals/ESP.h"
 #include "../Core/Features/Visuals/ESPPreview.h"
+#include "../Core/Features/Visuals/ShaderChams.h"
+#include "../Core/Features/Visuals/KillEffects.h"
 #include "../Core/Features/Aim/Aim.h"
+#include "../Core/Features/Aim/RaycastSilent.h"
 #include "../Core/Features/Misc/Misc.h"
+#include "../Core/Features/Misc/HitSounds.h"
 #include "../Core/Features/Explorer/Explorer.h"
 #include "../Core/PlayerHandler/PlayerHandler.h"
 #include <Windows.h>
@@ -26,6 +31,24 @@ namespace {
         const float row_y = widgets::color_picker_row_y();
         widgets::same_line_color_picker(row_y, 0, 1);
         widgets::color_edit4(color_id, color);
+    }
+
+    void sync_gui_theme() {
+        auto& g = Cheat::g_Settings.gui;
+        colors::SyncFromSettings(
+            g.accent, g.text_active, g.text_inactive,
+            g.outer_border, g.inner_border, g.panel_fill,
+            g.content_outer, g.content_inner, g.content_fill, g.child_fill);
+    }
+
+    void theme_color_row(const char* label, float color[4], const char* id) {
+        ImGui::SetCursorPosX(6.0f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+        ImGui::TextUnformatted(label);
+        const float row_y = widgets::color_picker_row_y();
+        widgets::same_line_color_picker(row_y, 0, 1);
+        if (widgets::color_edit4(id, color))
+            Cheat::g_Settings.gui.theme = colors::Theme_Custom;
     }
 }
 
@@ -55,10 +78,11 @@ bool Menu::Initialize(HWND hWnd, ID3D11Device* pDevice, ID3D11DeviceContext* pDe
 
     m_bInitialized = true;
 
-    Cheat::Visuals::ESPPreview::Initialize();
     Cheat::Features::Explorer::Initialize();
 
     Cheat::Features::Misc::Start();
+
+    Cheat::Features::RaycastSilent::Ensure(true);
 
     return true;
 }
@@ -71,9 +95,13 @@ void Menu::Render()
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     {
+        sync_gui_theme();
 
-        Visuals::ESP::Render();
-        Features::Aim::Render();
+        if (Renderer::IsGameActive()) {
+            Visuals::ESP::Render();
+            Features::Aim::Render();
+            Visuals::KillEffects::Tick();
+        }
         DrawMenu();
         Features::Explorer::Render();
     }
@@ -86,12 +114,41 @@ bool Menu::IsVisible()
     return m_bMenuVisible;
 }
 
+bool Menu::IsPointOverUI(float x, float y)
+{
+    if (!m_bInitialized) return false;
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+    if (!ctx || ctx->Windows.Size <= 0) return false;
+
+    const ImVec2 p(x, y);
+    for (int i = ctx->Windows.Size - 1; i >= 0; --i) {
+        ImGuiWindow* w = ctx->Windows[i];
+        if (!w || !w->Active || w->Hidden) continue;
+        if (w->IsFallbackWindow) continue;
+
+        if (w->Flags & ImGuiWindowFlags_Tooltip) continue;
+        if (!(w->Flags & ImGuiWindowFlags_NoInputs)) {
+            if (w->Rect().Contains(p))
+                return true;
+        }
+    }
+    return false;
+}
+
+bool Menu::ShouldCaptureMouse(float x, float y)
+{
+    if (!m_bInitialized || !m_bMenuVisible) return false;
+
+    if (ImGui::GetIO().WantCaptureMouse) return true;
+    return IsPointOverUI(x, y);
+}
+
 void Menu::DrawMenu()
 {
     ImGuiIO& io = ImGui::GetIO();
 
     constexpr float k_animation_duration = 0.30f;
-    static bool watermark_enabled = true;
+    static bool watermark_enabled = false;
     static bool insert_previous = false;
     static float animation_time = k_animation_duration;
     static bool animation_open_direction = true;
@@ -126,8 +183,7 @@ void Menu::DrawMenu()
         window_alpha = 1.0f - animation::ease_cubic_in(progress);
     }
 
-    const bool draw_watermark = watermark_enabled || !m_bMenuVisible;
-    if (draw_watermark) {
+    if (watermark_enabled) {
         const float watermark_alpha = m_bMenuVisible ? window_alpha : 1.0f;
         widgets::watermark("user", watermark_alpha);
     }
@@ -170,6 +226,15 @@ void Menu::DrawMenu()
             if (ImGui::IsItemActive()) {
                 const float nh = ImClamp(sz.y + io.MouseDelta.y, kMinH, kMaxH);
                 ImGui::SetWindowSize(ImVec2(sz.x, nh));
+            }
+
+            ImGui::SetCursorPos(ImVec2(sz.x - kGrip, sz.y - kGrip));
+            ImGui::InvisibleButton("##rzc", ImVec2(kGrip, kGrip));
+            if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+            if (ImGui::IsItemActive()) {
+                const float nw = ImClamp(sz.x + io.MouseDelta.x, kMinW, kMaxW);
+                const float nh = ImClamp(sz.y + io.MouseDelta.y, kMinH, kMaxH);
+                ImGui::SetWindowSize(ImVec2(nw, nh));
             }
         }
         const ImVec2 window_pos  = s_menu_pos;
@@ -354,12 +419,9 @@ void Menu::DrawMenu()
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                    row_checkbox_color("outline", &g_Settings.esp.outline, g_Settings.esp.outline_color, "esp_outline_color");
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
                     widgets::checkbox("chams", &g_Settings.esp.chams);
-                    {
+
+                    if (g_Settings.esp.chams_mode != 3) {
                         const float row_y = widgets::color_picker_row_y();
                         widgets::same_line_color_picker(row_y, 1, 2);
                         widgets::color_edit4("esp_chams_outline_color", g_Settings.esp.chams_outline_color);
@@ -370,8 +432,16 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     {
-                        static const char* k_chams_modes[] = { "box", "box filled", "clipper" };
-                        widgets::combo("chams mode", &g_Settings.esp.chams_mode, k_chams_modes, 3);
+                        static const char* k_chams_modes[] = { "box", "box filled", "clipper", "shader" };
+                        widgets::combo("chams mode", &g_Settings.esp.chams_mode, k_chams_modes, 4);
+                    }
+
+                    if (g_Settings.esp.chams_mode == 3) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::combo("shader", &g_Settings.esp.chams_shader,
+                                       Visuals::ShaderChams::StyleNames(),
+                                       Visuals::ShaderChams::StyleNameCount());
                     }
 
                     ImGui::SetCursorPosX(6.0f);
@@ -400,7 +470,7 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                     {
-                        static const char* k_fonts[] = { "tahoma", "tahoma bold" };
+                        static const char* k_fonts[] = { "gui (thin)", "gui bold" };
                         widgets::combo("font", &g_Settings.esp.font, k_fonts, 2);
                     }
 
@@ -466,6 +536,39 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
                     widgets::checkbox("watermark", &watermark_enabled);
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    {
+                        auto& gui = g_Settings.gui;
+                        static int s_last_theme = -1;
+                        widgets::combo("theme", &gui.theme,
+                                       colors::ThemeNames(), colors::ThemeNameCount());
+
+                        if (gui.theme != s_last_theme) {
+                            s_last_theme = gui.theme;
+                            if (gui.theme != colors::Theme_Custom) {
+                                colors::ApplyPreset(
+                                    gui.theme,
+                                    gui.accent, gui.text_active, gui.text_inactive,
+                                    gui.outer_border, gui.inner_border, gui.panel_fill,
+                                    gui.content_outer, gui.content_inner,
+                                    gui.content_fill, gui.child_fill);
+                            }
+                            sync_gui_theme();
+                        }
+                    }
+
+                    theme_color_row("accent",         g_Settings.gui.accent,         "gui_accent");
+                    theme_color_row("text",           g_Settings.gui.text_active,    "gui_text");
+                    theme_color_row("text dim",       g_Settings.gui.text_inactive,  "gui_text_dim");
+                    theme_color_row("outer border",   g_Settings.gui.outer_border,   "gui_outer");
+                    theme_color_row("inner border",   g_Settings.gui.inner_border,   "gui_inner");
+                    theme_color_row("panel",          g_Settings.gui.panel_fill,     "gui_panel");
+                    theme_color_row("content border", g_Settings.gui.content_outer,  "gui_c_outer");
+                    theme_color_row("content inline", g_Settings.gui.content_inner,  "gui_c_inner");
+                    theme_color_row("content",        g_Settings.gui.content_fill,   "gui_content");
+                    theme_color_row("child",          g_Settings.gui.child_fill,     "gui_child");
                 }
                 widgets::end_child_panel();
             } else if (active_tab == 3) {
@@ -475,37 +578,95 @@ void Menu::DrawMenu()
                     aim_left_pos.x + aim_child_size.x + k_side_child_gap,
                     k_child_margin);
 
-                if (draw_side_child("aim_main", "aim", aim_left_pos, aim_child_size)) {
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
-                    widgets::keybind("aim key", &g_Settings.aim.bind, &g_Settings.aim.bind_mode);
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                    {
-                        static const char* k_types[] = { "mouse", "camera", "silent" };
-                        widgets::combo("type", &g_Settings.aim.type, k_types, 3);
-                    }
-
-                    if (g_Settings.aim.type == 2) {
+                {
+                    if (draw_side_child("aim_main", "aim", aim_left_pos, aim_child_size)) {
                         ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 1.0f);
-                        ImGui::TextUnformatted("silent: unavailable");
-                    } else {
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
+                        widgets::keybind("aim key", &g_Settings.aim.bind, &g_Settings.aim.bind_mode);
+
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                        widgets::checkbox("settings", &g_Settings.aim.params_window);
-                    }
-                }
-                widgets::end_child_panel();
+                        {
+                            static const char* k_types[] = { "mouse", "camera", "silent" };
+                            widgets::combo("type", &g_Settings.aim.type, k_types, 3);
+                        }
 
-                if (draw_side_child("aim_hitbox", "hitboxes", aim_right_pos, aim_child_size)) {
-                    if (g_Settings.aim.type == 2) {
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                        ImGui::TextUnformatted("n/a for silent");
-                    } else {
+                        if (g_Settings.aim.type == 2) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                            {
+                                static const char* k_silent[] = {
+                                    "viewport", "mouse", "raycast", "magic bullet"
+                                };
+                                widgets::combo("silent method", &g_Settings.aim.silent_method,
+                                    k_silent, Cheat::Settings::SILENT_METHOD_COUNT);
+                            }
+
+                            if (g_Settings.aim.silent_method == Cheat::Settings::SILENT_RAYCAST) {
+                                ImGui::SetCursorPosX(6.0f);
+                                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                                widgets::checkbox_keybind(
+                                    "force magic bullet",
+                                    &g_Settings.aim.force_magic_bullet,
+                                    &g_Settings.aim.force_magic_key,
+                                    &g_Settings.aim.force_magic_mode);
+                            }
+                        }
+
                         Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        row_checkbox_color("fov check", &cfg.fov_enabled, cfg.fov_color, "aim_fov_color");
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                        widgets::slider_float("fov size", &cfg.fov_size, 10.0f, 600.0f, "%.0f");
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        {
+                            static const char* k_pos[] = { "center", "mouse" };
+                            widgets::combo("fov pos", &cfg.fov_position, k_pos, 2);
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::checkbox("distance check", &cfg.distance_check);
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("max distance", &cfg.max_distance, 50.0f, 5000.0f, "%.0f");
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::checkbox("visible only", &cfg.visible_only);
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                        widgets::checkbox("humanize", &cfg.humanize);
+
+                        if (cfg.humanize) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("reaction", &cfg.reaction_ms, 0.0f, 400.0f, "%.0fms");
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                        widgets::checkbox("sticky target", &cfg.sticky);
+
+                        if (cfg.sticky) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("sticky fov", &cfg.sticky_fov_scale, 1.0f, 4.0f, "%.1fx");
+                        }
+                    }
+                    widgets::end_child_panel();
+
+                    if (draw_side_child("aim_hitbox", "hitboxes", aim_right_pos, aim_child_size)) {
+                        Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
+
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                         {
@@ -521,12 +682,90 @@ void Menu::DrawMenu()
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                         widgets::slider_float("switch time", &cfg.switch_time, 0.05f, 2.0f, "%.2fs");
 
+                        if (g_Settings.aim.type != 2) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("smoothness x", &cfg.smooth_x, 0.1f, 5.0f, "%.1f");
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("smoothness y", &cfg.smooth_y, 0.1f, 5.0f, "%.1f");
+                        }
+
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::slider_float("smoothness", &cfg.smoothness, 1.0f, 30.0f, "%.1f");
+                        widgets::checkbox("kill effects", &g_Settings.killfx.enabled);
+
+                        if (g_Settings.killfx.enabled) {
+                            if (g_Settings.killfx.effect < 0 ||
+                                g_Settings.killfx.effect >= Visuals::KillEffects::EffectNameCount())
+                                g_Settings.killfx.effect = 0;
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::combo("kill fx", &g_Settings.killfx.effect,
+                                           Visuals::KillEffects::EffectNames(),
+                                           Visuals::KillEffects::EffectNameCount());
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::checkbox("hitmarkers", &g_Settings.hitmarker.enabled);
+
+                        if (g_Settings.hitmarker.enabled) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("marker size", &g_Settings.hitmarker.size, 0.5f, 2.5f, "%.2f");
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("marker time", &g_Settings.hitmarker.duration, 0.2f, 1.5f, "%.2fs");
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::checkbox("hitsounds", &g_Settings.hitsound.enabled);
+
+                        if (g_Settings.hitsound.enabled) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            if (g_Settings.hitsound.index < 0 ||
+                                g_Settings.hitsound.index >= Features::HitSounds::Count())
+                                g_Settings.hitsound.index = 0;
+                            if (widgets::combo("hitsound", &g_Settings.hitsound.index,
+                                               Features::HitSounds::Names(),
+                                               Features::HitSounds::Count())) {
+                                Features::HitSounds::Play(g_Settings.hitsound.index);
+                            }
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("hitsound volume", &g_Settings.hitsound.volume,
+                                                  0.0f, 100.0f, "%.0f%%");
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::checkbox("hit data", &g_Settings.hitdata.enabled);
+
+                        if (g_Settings.hitdata.enabled) {
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::multi_combo("data lines", g_Settings.hitdata.modes,
+                                                 Visuals::KillEffects::HitDataModeNames(),
+                                                 Visuals::KillEffects::HitDataModeNameCount());
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("data size", &g_Settings.hitdata.size, 10.0f, 28.0f, "%.0f");
+
+                            ImGui::SetCursorPosX(6.0f);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::slider_float("data time", &g_Settings.hitdata.duration, 0.4f, 2.5f, "%.2fs");
+                        }
                     }
+                    widgets::end_child_panel();
                 }
-                widgets::end_child_panel();
             } else if (active_tab == 4) {
 
                 const ImVec2 misc_child_size = make_side_child_size(2);
@@ -538,38 +777,24 @@ void Menu::DrawMenu()
                 if (draw_side_child("misc_world", "world", misc_left_pos, misc_child_size)) {
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                    widgets::checkbox("time", &g_Settings.world.time);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("time value", &g_Settings.world.time_value, 0.0f, 24.0f, "%.1f");
+                    widgets::checkbox("no shadow", &g_Settings.world.no_shadow);
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("grass", &g_Settings.world.grass);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("grass size", &g_Settings.world.grass_length, 0.0f, 5.0f, "%.2f");
+                    widgets::slider_float("brightness", &g_Settings.world.brightness, 0.0f, 20.0f, "%.1f");
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("stars", &g_Settings.world.stars);
+                    row_checkbox_color("fog", &g_Settings.world.fog,
+                        g_Settings.world.fog_color, "world_fog_color");
+
                     ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_int("star count", &g_Settings.world.star_count, 0, 30000, "%d");
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                    widgets::slider_float("fog start", &g_Settings.world.fog_start, 0.0f, 100000.0f, "%.0f");
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("sun", &g_Settings.world.sun);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("sun size", &g_Settings.world.sun_size, 0.0f, 100.0f, "%.0f");
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("moon", &g_Settings.world.moon);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("moon size", &g_Settings.world.moon_size, 0.0f, 100.0f, "%.0f");
+                    widgets::slider_float("fog end", &g_Settings.world.fog_end, 0.0f, 100000.0f, "%.0f");
                 }
                 widgets::end_child_panel();
 
@@ -648,10 +873,6 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
                     widgets::checkbox("infinite jump", &g_Settings.misc.inf_jump);
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                    widgets::checkbox("world visuals", &g_Settings.wvis.panel);
                 }
                 widgets::end_child_panel();
             }
@@ -667,179 +888,30 @@ void Menu::DrawMenu()
         return;
     }
 
-    constexpr float k_info_panel_w = 180.0f;
-    constexpr float k_info_gap     = 6.0f;
-    constexpr float k_info_margin  = 10.0f;
-
-    const float info_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-        ? fonts::tahoma->LegacySize : 13.0f;
-
-    ImGui::SetNextWindowPos(
-        ImVec2(s_menu_pos.x + s_menu_size.x + k_info_gap, s_menu_pos.y),
-        ImGuiCond_Always);
-    ImGui::SetNextWindowSize(
-        ImVec2(k_info_panel_w, s_menu_size.y),
-        ImGuiCond_FirstUseEver);
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-
-    ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
-    ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(51/255.f, 122/255.f, 231/255.f, 0.7f));
-    ImGui::PushStyleColor(ImGuiCol_ResizeGripActive,  ImVec4(51/255.f, 122/255.f, 231/255.f, 1.0f));
-
-    const ImGuiWindowFlags k_info_flags =
-        ImGuiWindowFlags_NoTitleBar    |
-        ImGuiWindowFlags_NoScrollbar   |
-        ImGuiWindowFlags_NoScrollWithMouse |
-        ImGuiWindowFlags_NoFocusOnAppearing;
-
-    static float s_info_actual_w = k_info_panel_w;
-
-    if (ImGui::Begin("##jewsploit_info", nullptr, k_info_flags))
-    {
-        s_info_actual_w = ImGui::GetWindowSize().x;
-        colors::draw_panel_background(window_alpha);
-
-        const ImVec2 info_win_size = ImGui::GetWindowSize();
-        const float child_w = info_win_size.x - k_info_margin * 2.0f;
-        const float child_h = info_win_size.y - k_info_margin * 2.0f;
-
-        ImGui::SetCursorPos(ImVec2(k_info_margin, k_info_margin));
-
-        if (widgets::begin_child_panel(
-                "info_panel_child",
-                ImVec2(child_w, child_h),
-                "info",
-                fonts::tahoma,
-                info_font_size,
-                nullptr, nullptr, nullptr))
-        {
-            const float scroll_h = ImGui::GetContentRegionAvail().y;
-
-            if (active_tab == 0) {
-                {
-
-                    const std::size_t player_count = PlayerHandler::GetPlayerCount();
-                    char buf[64];
-                    ImFormatString(buf, IM_ARRAYSIZE(buf), "cached players: %zu", player_count);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(buf);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(g_Settings.esp.enabled ? "esp: active" : "esp: disabled");
-                }
-
-            } else if (active_tab == 1) {
-
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-                ImGui::SetCursorPosX(0.0f);
-                if (ImGui::BeginChild("##players_scroll", ImVec2(child_w - 4.0f, scroll_h), false,
-                        ImGuiWindowFlags_NoScrollbar))
-                {
-                    const std::size_t total = PlayerHandler::GetPlayerCount();
-                    if (total == 0) {
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::TextUnformatted("no players");
-                    } else {
-                        char total_buf[64];
-                        ImFormatString(total_buf, IM_ARRAYSIZE(total_buf), "total: %zu", total);
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::TextUnformatted(total_buf);
-                        PlayerHandler::ForEachPlayer([](const PlayerCache& player) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::TextUnformatted(player.name.empty() ? "unknown" : player.name.c_str());
-                        });
-                    }
-                }
-                ImGui::EndChild();
-                ImGui::PopStyleColor();
-
-            } else if (active_tab == 2) {
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted("jewsploit");
-                char build_buf[64];
-                ImFormatString(build_buf, IM_ARRAYSIZE(build_buf), "build: %s", __DATE__);
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(build_buf);
-            } else if (active_tab == 3) {
-
-                static const char* k_type_names[] = { "mouse", "camera", "silent" };
-                const int type_idx = ImClamp(g_Settings.aim.type, 0, 2);
-                char tbuf[64];
-                ImFormatString(tbuf, IM_ARRAYSIZE(tbuf), "type: %s", k_type_names[type_idx]);
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(tbuf);
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(g_Settings.aim.bind == 0 ? "bind: none" : "bind: set");
-
-                if (g_Settings.aim.type == 2) {
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted("silent: unavailable");
-                } else {
-                    Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(cfg.fov_enabled ? "fov: on" : "fov: off");
-
-                    char fbuf[64];
-                    ImFormatString(fbuf, IM_ARRAYSIZE(fbuf), "fov size: %.0f", cfg.fov_size);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(fbuf);
-
-                    int part_count = 0;
-                    for (int i = 0; i < Cheat::Settings::AIM_PART_COUNT; ++i)
-                        if (cfg.parts[i]) ++part_count;
-                    char pbuf[64];
-                    ImFormatString(pbuf, IM_ARRAYSIZE(pbuf), "parts: %d", part_count);
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(pbuf);
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::TextUnformatted(cfg.humanize ? "humanize: on" : "humanize: off");
-                }
-            } else if (active_tab == 4) {
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(g_Settings.world.time ? "time: on" : "time: off");
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(g_Settings.misc.fps_unlock ? "fps unlock: on" : "fps unlock: off");
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(g_Settings.misc.fly ? "fly: on" : "fly: off");
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::TextUnformatted(g_Settings.misc.explorer ? "explorer: open" : "explorer: closed");
-            }
-        }
-        widgets::end_child_panel();
-    }
-    ImGui::End();
-    ImGui::PopStyleColor(3);
-    ImGui::PopStyleVar(3);
-
     constexpr float k_dock_gap = 6.0f;
-    float dock_x = s_menu_pos.x + s_menu_size.x + k_info_gap + s_info_actual_w;
+    float dock_x = s_menu_pos.x + s_menu_size.x;
 
     if (g_Settings.esp.preview && active_tab != 3 &&
         (m_bMenuVisible || animation_running || window_alpha > 0.0f))
     {
-        constexpr float k_preview_panel_w = 220.0f;
-
+        constexpr float k_preview_default_w = 300.0f;
         const float preview_x = dock_x + k_dock_gap;
-        dock_x = preview_x + k_preview_panel_w;
 
-        ImGui::SetNextWindowPos(
-            ImVec2(preview_x, s_menu_pos.y),
-            ImGuiCond_Always);
-        ImGui::SetNextWindowSize(
-            ImVec2(k_preview_panel_w, s_menu_size.y),
-            ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(preview_x, s_menu_pos.y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(k_preview_default_w, s_menu_size.y), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(200.0f, s_menu_size.y),
+            ImVec2(520.0f, s_menu_size.y));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(51/255.f, 122/255.f, 231/255.f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripActive,  ImVec4(51/255.f, 122/255.f, 231/255.f, 1.0f));
+        {
+            ImVec4 a = colors::accent; a.w = 0.7f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, a);
+            a.w = 1.0f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGripActive, a);
+        }
 
         const ImGuiWindowFlags k_preview_flags =
             ImGuiWindowFlags_NoTitleBar    |
@@ -849,6 +921,13 @@ void Menu::DrawMenu()
 
         if (ImGui::Begin("##jewsploit_esp_preview", nullptr, k_preview_flags))
         {
+
+            const ImVec2 cur = ImGui::GetWindowSize();
+            if (ImFabs(cur.y - s_menu_size.y) > 0.5f)
+                ImGui::SetWindowSize(ImVec2(cur.x, s_menu_size.y));
+
+            dock_x = preview_x + ImGui::GetWindowSize().x;
+
             colors::draw_panel_background(window_alpha);
 
             constexpr float k_margin = 10.0f;
@@ -877,224 +956,27 @@ void Menu::DrawMenu()
         ImGui::PopStyleVar(3);
     }
 
-    if (active_tab == 3 && g_Settings.aim.params_window && g_Settings.aim.type != 2 &&
-        (m_bMenuVisible || animation_running || window_alpha > 0.0f))
-    {
-        Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
-        const char* panel_title = g_Settings.aim.type == 1 ? "camera settings" : "mouse settings";
-
-        constexpr float k_aim_panel_w = 230.0f;
-        const float aim_x = dock_x + k_dock_gap;
-        dock_x = aim_x + k_aim_panel_w;
-
-        ImGui::SetNextWindowPos(ImVec2(aim_x, s_menu_pos.y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(k_aim_panel_w, s_menu_size.y), ImGuiCond_FirstUseEver);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(51/255.f, 122/255.f, 231/255.f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripActive,  ImVec4(51/255.f, 122/255.f, 231/255.f, 1.0f));
-
-        const ImGuiWindowFlags k_aim_flags =
-            ImGuiWindowFlags_NoTitleBar    |
-            ImGuiWindowFlags_NoScrollbar   |
-            ImGuiWindowFlags_NoScrollWithMouse |
-            ImGuiWindowFlags_NoFocusOnAppearing;
-
-        if (ImGui::Begin("##jewsploit_aim_settings", nullptr, k_aim_flags))
-        {
-            colors::draw_panel_background(window_alpha);
-
-            constexpr float k_margin = 10.0f;
-            const ImVec2 win_sz  = ImGui::GetWindowSize();
-            const float  child_w = win_sz.x - k_margin * 2.0f;
-            const float  child_h = win_sz.y - k_margin * 2.0f;
-            const float  tf = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize : 13.0f;
-
-            ImGui::SetCursorPos(ImVec2(k_margin, k_margin));
-            if (widgets::begin_child_panel(
-                    "aim_settings_child", ImVec2(child_w, child_h),
-                    panel_title, fonts::tahoma, tf, nullptr, nullptr, nullptr))
-            {
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                row_checkbox_color("fov check", &cfg.fov_enabled, cfg.fov_color, "aim_fov_color");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                widgets::slider_float("fov size", &cfg.fov_size, 10.0f, 600.0f, "%.0f");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                {
-                    static const char* k_pos[] = { "center", "mouse" };
-                    widgets::combo("fov pos", &cfg.fov_position, k_pos, 2);
-                }
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                widgets::checkbox("distance check", &cfg.distance_check);
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                widgets::slider_float("max distance", &cfg.max_distance, 50.0f, 5000.0f, "%.0f");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                widgets::checkbox("visible only", &cfg.visible_only);
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                widgets::checkbox("humanize", &cfg.humanize);
-
-                if (cfg.humanize) {
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("reaction", &cfg.reaction_ms, 0.0f, 400.0f, "%.0fms");
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("jitter", &cfg.jitter, 0.0f, 10.0f, "%.1f");
-                }
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                widgets::checkbox("sticky target", &cfg.sticky);
-
-                if (cfg.sticky) {
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("sticky fov", &cfg.sticky_fov_scale, 1.0f, 4.0f, "%.1fx");
-                }
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                const float curves_w = ImGui::GetContentRegionAvail().x - 6.0f;
-                const float curves_h = ImMax(150.0f, ImGui::GetContentRegionAvail().y - 6.0f);
-                if (widgets::begin_child_panel(
-                        "aim_curves_child", ImVec2(curves_w, curves_h),
-                        "curves (vs distance)", fonts::tahoma, tf, nullptr, nullptr, nullptr))
-                {
-                    const float graph_w = ImGui::GetContentRegionAvail().x - 12.0f;
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                    ImGui::TextUnformatted("jitter");
-                    ImGui::SetCursorPosX(6.0f);
-                    widgets::curve_editor("##jitter_curve", cfg.jitter_curve,
-                        Cheat::Settings::kAimCurvePoints, ImVec2(graph_w, 64.0f));
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                    ImGui::TextUnformatted("smoothness");
-                    ImGui::SetCursorPosX(6.0f);
-                    widgets::curve_editor("##smooth_curve", cfg.smooth_curve,
-                        Cheat::Settings::kAimCurvePoints, ImVec2(graph_w, 64.0f));
-                }
-                widgets::end_child_panel();
-            }
-            widgets::end_child_panel();
-        }
-        ImGui::End();
-        ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar(3);
-    }
-
-    constexpr float k_wvis_panel_w = 230.0f;
-    const bool wvis_open = active_tab == 4 && g_Settings.wvis.panel &&
-        (m_bMenuVisible || animation_running || window_alpha > 0.0f);
-
-    if (wvis_open)
-    {
-        const float wv_x = dock_x + k_dock_gap;
-        dock_x = wv_x + k_wvis_panel_w;
-
-        ImGui::SetNextWindowPos(ImVec2(wv_x, s_menu_pos.y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(k_wvis_panel_w, s_menu_size.y), ImGuiCond_FirstUseEver);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(51/255.f, 122/255.f, 231/255.f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripActive,  ImVec4(51/255.f, 122/255.f, 231/255.f, 1.0f));
-
-        const ImGuiWindowFlags k_wv_flags =
-            ImGuiWindowFlags_NoTitleBar    |
-            ImGuiWindowFlags_NoScrollbar   |
-            ImGuiWindowFlags_NoScrollWithMouse |
-            ImGuiWindowFlags_NoFocusOnAppearing;
-
-        if (ImGui::Begin("##jewsploit_wvis", nullptr, k_wv_flags))
-        {
-            colors::draw_panel_background(window_alpha);
-
-            constexpr float k_margin = 10.0f;
-            const ImVec2 win_sz  = ImGui::GetWindowSize();
-            const float  child_w = win_sz.x - k_margin * 2.0f;
-            const float  child_h = win_sz.y - k_margin * 2.0f;
-            const float  tf = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize : 13.0f;
-
-            ImGui::SetCursorPos(ImVec2(k_margin, k_margin));
-            if (widgets::begin_child_panel(
-                    "wvis_child", ImVec2(child_w, child_h),
-                    "world visuals", fonts::tahoma, tf, nullptr, nullptr, nullptr))
-            {
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                widgets::checkbox("fullbright", &g_Settings.wvis.fullbright);
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                widgets::slider_float("brightness", &g_Settings.wvis.brightness, 0.0f, 10.0f, "%.1f");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                row_checkbox_color("ambient", &g_Settings.wvis.ambient,
-                    g_Settings.wvis.ambient_color, "wvis_ambient");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                row_checkbox_color("outdoor ambient", &g_Settings.wvis.outdoor,
-                    g_Settings.wvis.outdoor_color, "wvis_outdoor");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                widgets::checkbox("fog", &g_Settings.wvis.fog);
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                widgets::slider_float("fog end", &g_Settings.wvis.fog_end, 0.0f, 100000.0f, "%.0f");
-
-                ImGui::SetCursorPosX(6.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                row_checkbox_color("fog color", &g_Settings.wvis.fog_color_on,
-                    g_Settings.wvis.fog_color, "wvis_fogcolor");
-            }
-            widgets::end_child_panel();
-        }
-        ImGui::End();
-        ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar(3);
-    }
-
     if (active_tab == 4 && g_Settings.misc.custom_support &&
         (m_bMenuVisible || animation_running || window_alpha > 0.0f))
     {
-        constexpr float k_cs_panel_w = 280.0f;
+        constexpr float k_cs_default_w = 280.0f;
         const float cs_x = dock_x + k_dock_gap;
-        dock_x = cs_x + k_cs_panel_w;
 
         ImGui::SetNextWindowPos(ImVec2(cs_x, s_menu_pos.y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(k_cs_panel_w, s_menu_size.y), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(k_cs_default_w, s_menu_size.y), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(200.0f, s_menu_size.y),
+            ImVec2(480.0f, s_menu_size.y));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(51/255.f, 122/255.f, 231/255.f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ResizeGripActive,  ImVec4(51/255.f, 122/255.f, 231/255.f, 1.0f));
+        {
+            ImVec4 a = colors::accent; a.w = 0.7f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, a);
+            a.w = 1.0f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGripActive, a);
+        }
 
         const ImGuiWindowFlags k_cs_flags =
             ImGuiWindowFlags_NoTitleBar    |
@@ -1104,6 +986,11 @@ void Menu::DrawMenu()
 
         if (ImGui::Begin("##jewsploit_custom", nullptr, k_cs_flags))
         {
+            const ImVec2 cur = ImGui::GetWindowSize();
+            if (ImFabs(cur.y - s_menu_size.y) > 0.5f)
+                ImGui::SetWindowSize(ImVec2(cur.x, s_menu_size.y));
+            dock_x = cs_x + ImGui::GetWindowSize().x;
+
             colors::draw_panel_background(window_alpha);
 
             constexpr float k_margin = 10.0f;

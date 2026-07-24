@@ -9,6 +9,11 @@ namespace Cheat {
         public:
             static void Render();
 
+            static std::uint64_t CurrentTarget();
+
+            static int     CurrentAimPart();
+            static Vector3 CurrentAimPoint();
+
             static void mouse();
             static void viewport();
         };

@@ -1,9 +1,12 @@
 #include "ESP.h"
+#include "ShaderChams.h"
+#include "../Aim/Aim.h"
 #include "../../Globals/Globals.h"
 #include "../../Roblox/Math/Math.h"
 #include "../../Memory/Memory.h"
 #include "../../Roblox/Engine/Offsets/Offsets.h"
 #include "../../../Settings.h"
+#include "../../../Renderer/Renderer.h"
 #include "../../../GUI/resources/fonts/fonts.h"
 #include <iostream>
 #include <algorithm>
@@ -15,6 +18,7 @@ static void DrawTextWithOutline(ImDrawList* draw_list, ImFont* font, float font_
                                 ImVec2 pos, ImU32 color, const char* text)
 {
     ImU32 shadow = IM_COL32(0, 0, 0, 255);
+    font_size = fonts::snap_px(font_size);
     float x = std::floor(pos.x);
     float y = std::floor(pos.y);
 
@@ -27,12 +31,21 @@ static void DrawTextWithOutline(ImDrawList* draw_list, ImFont* font, float font_
     draw_list->AddText(font, font_size, ImVec2(x, y), color, text);
 }
 
+static void SnapEspBox(float min_x, float min_y, float max_x, float max_y,
+                       float& x1, float& y1, float& x2, float& y2)
+{
+    x1 = std::floor(min_x);
+    y1 = std::floor(min_y);
+    x2 = std::ceil(max_x);
+    y2 = std::ceil(max_y);
+    if (x2 <= x1) x2 = x1 + 1.0f;
+    if (y2 <= y1) y2 = y1 + 1.0f;
+}
+
 static void DrawBox(ImDrawList* draw_list, ImVec2 top_left, ImVec2 bottom_right, ImU32 color)
 {
-    float x1 = std::floor(top_left.x);
-    float y1 = std::floor(top_left.y);
-    float x2 = std::floor(bottom_right.x);
-    float y2 = std::floor(bottom_right.y);
+    float x1, y1, x2, y2;
+    SnapEspBox(top_left.x, top_left.y, bottom_right.x, bottom_right.y, x1, y1, x2, y2);
 
     draw_list->AddRect(ImVec2(x1 - 1, y1 - 1), ImVec2(x2 + 1, y2 + 1), IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.0f);
 
@@ -43,10 +56,8 @@ static void DrawBox(ImDrawList* draw_list, ImVec2 top_left, ImVec2 bottom_right,
 
 static void DrawCornerBox(ImDrawList* draw_list, ImVec2 top_left, ImVec2 bottom_right, ImU32 color)
 {
-    const float x1 = std::floor(top_left.x);
-    const float y1 = std::floor(top_left.y);
-    const float x2 = std::floor(bottom_right.x);
-    const float y2 = std::floor(bottom_right.y);
+    float x1, y1, x2, y2;
+    SnapEspBox(top_left.x, top_left.y, bottom_right.x, bottom_right.y, x1, y1, x2, y2);
     const float lw = (std::max)(2.0f, std::floor((x2 - x1) * 0.25f));
     const float lh = (std::max)(2.0f, std::floor((y2 - y1) * 0.25f));
 
@@ -228,6 +239,9 @@ static void DrawSegmentOutsideUnion(ImDrawList* dl, const ImVec2& a, const ImVec
         dl->AddLine(lerp_pt(cursor), lerp_pt(1.0f), color, 1.0f);
 }
 
+static float g_esp_scale_x = 1.0f;
+static float g_esp_scale_y = 1.0f;
+
 bool WorldToScreen(const Matrix4x4& matrix, const Vector2& dimensions, const Vector3& position, Vector2& screen)
 {
     float w = position.x * matrix.m[3][0] + position.y * matrix.m[3][1] + position.z * matrix.m[3][2] + matrix.m[3][3];
@@ -239,8 +253,8 @@ bool WorldToScreen(const Matrix4x4& matrix, const Vector2& dimensions, const Vec
     float invw = 1.0f / w;
     x *= invw; y *= invw;
 
-    screen.x = (dimensions.x / 2) + (x * dimensions.x / 2);
-    screen.y = (dimensions.y / 2) - (y * dimensions.y / 2);
+    screen.x = ((dimensions.x / 2) + (x * dimensions.x / 2)) * g_esp_scale_x;
+    screen.y = ((dimensions.y / 2) - (y * dimensions.y / 2)) * g_esp_scale_y;
     return true;
 }
 
@@ -257,12 +271,25 @@ void Cheat::Visuals::ESP::Render()
     const Vector3 cam_pos = camera.GetPosition();
     auto draw_list = ImGui::GetBackgroundDrawList();
 
+    g_esp_scale_x = 1.0f;
+    g_esp_scale_y = 1.0f;
+    float overlay_w = viewport.x, overlay_h = viewport.y;
+    if (HWND oh = Renderer::GetHwnd()) {
+        RECT ocr{};
+        if (GetClientRect(oh, &ocr) && viewport.x > 1.0f && viewport.y > 1.0f) {
+            overlay_w = (float)(ocr.right - ocr.left);
+            overlay_h = (float)(ocr.bottom - ocr.top);
+            g_esp_scale_x = overlay_w / viewport.x;
+            g_esp_scale_y = overlay_h / viewport.y;
+        }
+    }
+
     ImFont* esp_font = (Cheat::g_Settings.esp.font == 1)
-        ? (fonts::esp_bold ? fonts::esp_bold : fonts::tahoma_bold)
-        : (fonts::esp ? fonts::esp : fonts::tahoma);
+        ? (fonts::tahoma_bold ? fonts::tahoma_bold : fonts::tahoma)
+        : (fonts::tahoma ? fonts::tahoma : fonts::tahoma_bold);
     if (!esp_font) esp_font = ImGui::GetFont();
-    const float esp_fs = (std::max)(8.0f, Cheat::g_Settings.esp.font_size);
-    const float small_fs = (std::max)(9.0f, esp_fs - 3.0f);
+
+    const float esp_fs = fonts::snap_px(Cheat::g_Settings.esp.font_size);
 
     ImDrawListFlags backup_flags = draw_list->Flags;
     draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
@@ -296,8 +323,8 @@ void Cheat::Visuals::ESP::Render()
             if (!WorldToScreen(vm, viewport, root_pos, root_screen))
                 return;
             constexpr float kCullMargin = 400.0f;
-            if (root_screen.x < -kCullMargin || root_screen.x > viewport.x + kCullMargin ||
-                root_screen.y < -kCullMargin || root_screen.y > viewport.y + kCullMargin)
+            if (root_screen.x < -kCullMargin || root_screen.x > overlay_w + kCullMargin ||
+                root_screen.y < -kCullMargin || root_screen.y > overlay_h + kCullMargin)
                 return;
         }
 
@@ -380,34 +407,19 @@ void Cheat::Visuals::ESP::Render()
 
         if (!any_visible || min_x > 5000.0f) return;
 
-        if (Cheat::g_Settings.esp.outline && !chams_parts.empty()) {
-            const auto& oc = Cheat::g_Settings.esp.outline_color;
-            const ImU32 outline_col = IM_COL32((int)(oc[0]*255),(int)(oc[1]*255),
-                                               (int)(oc[2]*255),(int)(oc[3]*255));
-
-            std::vector<std::vector<ImVec2>> hulls;
-            hulls.reserve(chams_parts.size());
-            for (const auto& pc : chams_parts) {
-                std::vector<ImVec2> pts(pc.pt, pc.pt + 8);
-                auto h = ConvexHull(pts);
-                if (h.size() >= 3) hulls.push_back(std::move(h));
-            }
-
-            for (int i = 0; i < (int)hulls.size(); ++i) {
-                const auto& hull = hulls[i];
-                const int n = (int)hull.size();
-                for (int e = 0; e < n; ++e)
-                    DrawSegmentOutsideUnion(draw_list,
-                        hull[e], hull[(e + 1) % n],
-                        hulls, i, outline_col);
-            }
-        }
+        const bool aim_target =
+            Cheat::Features::Aim::CurrentTarget() != 0 &&
+            cache.address == Cheat::Features::Aim::CurrentTarget();
+        constexpr ImU32 k_aim_red      = IM_COL32(255, 45, 45, 255);
+        constexpr ImU32 k_aim_red_fill = IM_COL32(255, 45, 45, 110);
 
         if (want_chams && !chams_parts.empty()) {
             const auto& oc = Cheat::g_Settings.esp.chams_outline_color;
             const auto& fc = Cheat::g_Settings.esp.chams_fill_color;
-            const ImU32 outline_col = IM_COL32((int)(oc[0]*255),(int)(oc[1]*255),(int)(oc[2]*255),(int)(oc[3]*255));
-            const ImU32 fill_col    = IM_COL32((int)(fc[0]*255),(int)(fc[1]*255),(int)(fc[2]*255),(int)(fc[3]*255));
+            const ImU32 outline_col = aim_target ? k_aim_red : IM_COL32(
+                (int)(oc[0]*255),(int)(oc[1]*255),(int)(oc[2]*255),(int)(oc[3]*255));
+            const ImU32 fill_col = aim_target ? k_aim_red_fill : IM_COL32(
+                (int)(fc[0]*255),(int)(fc[1]*255),(int)(fc[2]*255),(int)(fc[3]*255));
             const int mode = Cheat::g_Settings.esp.chams_mode;
 
             if (mode == 0) {
@@ -437,9 +449,8 @@ void Cheat::Visuals::ESP::Render()
                     hulls.push_back(ConvexHull(pts));
                 }
 
-                ImDrawListFlags fill_backup = draw_list->Flags;
-                draw_list->Flags &= ~ImDrawListFlags_AntiAliasedFill;
-
+                std::vector<std::vector<ImVec2>> clipped;
+                clipped.reserve(hulls.size() * 2);
                 for (int i = 0; i < (int)hulls.size(); ++i) {
                     if (hulls[i].size() < 3) continue;
 
@@ -451,21 +462,46 @@ void Cheat::Visuals::ESP::Render()
                             SubtractPoly(std::move(piece), hulls[j], next);
                         pieces = std::move(next);
                     }
-                    for (const auto& piece : pieces)
+                    for (auto& piece : pieces)
                         if (piece.size() >= 3)
-                            draw_list->AddConvexPolyFilled(piece.data(), (int)piece.size(), fill_col);
+                            clipped.push_back(std::move(piece));
                 }
 
-                draw_list->Flags = fill_backup;
+                if (mode == 3) {
 
-                for (int i = 0; i < (int)hulls.size(); ++i) {
-                    const auto& hull = hulls[i];
-                    const int n = (int)hull.size();
-                    if (n < 2) continue;
-                    for (int e = 0; e < n; ++e)
-                        DrawSegmentOutsideUnion(draw_list,
-                            hull[e], hull[(e + 1) % n],
-                            hulls, i, outline_col);
+                    const int shader = Cheat::g_Settings.esp.chams_shader;
+                    ShaderChams::DrawFill(draw_list, clipped, (float)ImGui::GetTime(),
+                                          shader, aim_target);
+                    const ImU32 shader_outline = aim_target
+                        ? k_aim_red
+                        : ShaderChams::OutlineColor(shader, false);
+                    for (int i = 0; i < (int)hulls.size(); ++i) {
+                        const auto& hull = hulls[i];
+                        const int n = (int)hull.size();
+                        if (n < 2) continue;
+                        for (int e = 0; e < n; ++e)
+                            DrawSegmentOutsideUnion(draw_list,
+                                hull[e], hull[(e + 1) % n],
+                                hulls, i, shader_outline);
+                    }
+                } else {
+                    ImDrawListFlags fill_backup = draw_list->Flags;
+                    draw_list->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+
+                    for (const auto& piece : clipped)
+                        draw_list->AddConvexPolyFilled(piece.data(), (int)piece.size(), fill_col);
+
+                    draw_list->Flags = fill_backup;
+
+                    for (int i = 0; i < (int)hulls.size(); ++i) {
+                        const auto& hull = hulls[i];
+                        const int n = (int)hull.size();
+                        if (n < 2) continue;
+                        for (int e = 0; e < n; ++e)
+                            DrawSegmentOutsideUnion(draw_list,
+                                hull[e], hull[(e + 1) % n],
+                                hulls, i, outline_col);
+                    }
                 }
             }
         }
@@ -482,9 +518,14 @@ void Cheat::Visuals::ESP::Render()
         }
         const float hp_frac = hp <= 0.0f ? 0.0f : (hp >= max_hp ? 1.0f : hp / max_hp);
 
+        float bx1, by1, bx2, by2;
+        SnapEspBox(min_x, min_y, max_x, max_y, bx1, by1, bx2, by2);
+        const float bcx = std::floor((bx1 + bx2) * 0.5f);
+
         if (Cheat::g_Settings.esp.box) {
             const auto& bc = Cheat::g_Settings.esp.box_color;
-            ImU32 box_color = IM_COL32((int)(bc[0] * 255), (int)(bc[1] * 255), (int)(bc[2] * 255), (int)(bc[3] * 255));
+            ImU32 box_color = aim_target ? k_aim_red : IM_COL32(
+                (int)(bc[0] * 255), (int)(bc[1] * 255), (int)(bc[2] * 255), (int)(bc[3] * 255));
             const int box_mode = Cheat::g_Settings.esp.box_mode;
 
             bool drew_3d = false;
@@ -515,39 +556,43 @@ void Cheat::Visuals::ESP::Render()
             }
 
             if (box_mode == 1)
-                DrawCornerBox(draw_list, ImVec2(min_x, min_y), ImVec2(max_x, max_y), box_color);
+                DrawCornerBox(draw_list, ImVec2(bx1, by1), ImVec2(bx2, by2), box_color);
             else if (!drew_3d && box_mode != 1)
-                DrawBox(draw_list, ImVec2(min_x, min_y), ImVec2(max_x, max_y), box_color);
+                DrawBox(draw_list, ImVec2(bx1, by1), ImVec2(bx2, by2), box_color);
         }
 
         if (Cheat::g_Settings.esp.healthbar) {
-            const float bar_x2 = std::floor(min_x) - 4.0f;
-            const float bar_x1 = bar_x2 - 2.0f;
-            const float y1 = std::floor(min_y);
-            const float y2 = std::floor(max_y);
-            const float fill_top = y2 - (y2 - y1) * hp_frac;
 
-            draw_list->AddRectFilled(ImVec2(bar_x1 - 1, y1 - 1), ImVec2(bar_x2 + 1, y2 + 1), IM_COL32(0, 0, 0, 255));
+            const float bar_x2 = bx1 - 3.0f;
+            const float bar_x1 = bar_x2 - 2.0f;
+            const float bar_h = by2 - by1;
+            const float fill_h = std::floor(bar_h * hp_frac + 0.5f);
+            const float fill_top = by2 - fill_h;
+
+            draw_list->AddRectFilled(ImVec2(bar_x1 - 1.0f, by1 - 1.0f),
+                                     ImVec2(bar_x2 + 1.0f, by2 + 1.0f),
+                                     IM_COL32(0, 0, 0, 255));
 
             const ImU32 hp_col = IM_COL32((int)(255 * (1.0f - hp_frac)), (int)(255 * hp_frac), 0, 255);
-            if (hp_frac > 0.0f)
-                draw_list->AddRectFilled(ImVec2(bar_x1, fill_top), ImVec2(bar_x2, y2), hp_col);
+            if (fill_h > 0.0f)
+                draw_list->AddRectFilled(ImVec2(bar_x1, fill_top), ImVec2(bar_x2, by2), hp_col);
 
             if (Cheat::g_Settings.esp.health_text && hp_frac < 1.0f) {
                 char hp_buf[16];
                 std::snprintf(hp_buf, sizeof(hp_buf), "%.0f", hp);
-                const ImVec2 tsz = esp_font->CalcTextSizeA(small_fs, FLT_MAX, 0.0f, hp_buf);
-                DrawTextWithOutline(draw_list, esp_font, small_fs,
-                    ImVec2(bar_x1 - tsz.x - 2.0f, fill_top - tsz.y * 0.5f),
+                const ImVec2 tsz = esp_font->CalcTextSizeA(esp_fs, FLT_MAX, 0.0f, hp_buf);
+                DrawTextWithOutline(draw_list, esp_font, esp_fs,
+                    ImVec2(std::floor(bar_x1 - tsz.x - 2.0f),
+                           std::floor(fill_top - tsz.y * 0.5f)),
                     IM_COL32(255, 255, 255, 255), hp_buf);
             }
         } else if (Cheat::g_Settings.esp.health_text) {
 
             char hp_buf[16];
             std::snprintf(hp_buf, sizeof(hp_buf), "%.0f hp", hp);
-            const ImVec2 tsz = esp_font->CalcTextSizeA(small_fs, FLT_MAX, 0.0f, hp_buf);
-            DrawTextWithOutline(draw_list, esp_font, small_fs,
-                ImVec2(min_x - tsz.x - 4.0f, min_y),
+            const ImVec2 tsz = esp_font->CalcTextSizeA(esp_fs, FLT_MAX, 0.0f, hp_buf);
+            DrawTextWithOutline(draw_list, esp_font, esp_fs,
+                ImVec2(std::floor(bx1 - tsz.x - 4.0f), by1),
                 IM_COL32(255, 255, 255, 255), hp_buf);
         }
 
@@ -558,13 +603,15 @@ void Cheat::Visuals::ESP::Render()
             const char* name = shown.c_str();
             const float text_width = esp_font->CalcTextSizeA(esp_fs, FLT_MAX, 0.0f, name).x;
             const auto& nc = Cheat::g_Settings.esp.name_color;
+            const ImU32 name_col = aim_target ? k_aim_red : IM_COL32(
+                (int)(nc[0]*255),(int)(nc[1]*255),(int)(nc[2]*255),(int)(nc[3]*255));
             DrawTextWithOutline(draw_list, esp_font, esp_fs,
-                               ImVec2(min_x + (max_x - min_x) / 2 - text_width / 2, min_y - esp_fs - 2),
-                               IM_COL32((int)(nc[0]*255),(int)(nc[1]*255),(int)(nc[2]*255),(int)(nc[3]*255)),
+                               ImVec2(std::floor(bcx - text_width * 0.5f), by1 - esp_fs - 2.0f),
+                               name_col,
                                name);
         }
 
-        float bottom_y = max_y + 2.0f;
+        float bottom_y = by2 + 2.0f;
 
         if (Cheat::g_Settings.esp.distance) {
             char dist_buf[32];
@@ -574,12 +621,12 @@ void Cheat::Visuals::ESP::Render()
                 std::snprintf(dist_buf, sizeof(dist_buf), "%.0f studs", dist_studs);
 
             const auto& dc = Cheat::g_Settings.esp.distance_color;
-            const ImVec2 tsz = esp_font->CalcTextSizeA(small_fs, FLT_MAX, 0.0f, dist_buf);
-            DrawTextWithOutline(draw_list, esp_font, small_fs,
-                ImVec2(min_x + (max_x - min_x) / 2 - tsz.x / 2, bottom_y),
+            const ImVec2 tsz = esp_font->CalcTextSizeA(esp_fs, FLT_MAX, 0.0f, dist_buf);
+            DrawTextWithOutline(draw_list, esp_font, esp_fs,
+                ImVec2(std::floor(bcx - tsz.x * 0.5f), std::floor(bottom_y)),
                 IM_COL32((int)(dc[0]*255),(int)(dc[1]*255),(int)(dc[2]*255),(int)(dc[3]*255)),
                 dist_buf);
-            bottom_y += tsz.y + 1.0f;
+            bottom_y += tsz.y + 2.0f;
         }
 
         if (Cheat::g_Settings.esp.tool && !cache.toolName.empty()) {
@@ -587,12 +634,12 @@ void Cheat::Visuals::ESP::Render()
             std::snprintf(tool_buf, sizeof(tool_buf), "[%s]", cache.toolName.c_str());
 
             const auto& tc = Cheat::g_Settings.esp.tool_color;
-            const ImVec2 tsz = esp_font->CalcTextSizeA(small_fs, FLT_MAX, 0.0f, tool_buf);
-            DrawTextWithOutline(draw_list, esp_font, small_fs,
-                ImVec2(min_x + (max_x - min_x) / 2 - tsz.x / 2, bottom_y),
+            const ImVec2 tsz = esp_font->CalcTextSizeA(esp_fs, FLT_MAX, 0.0f, tool_buf);
+            DrawTextWithOutline(draw_list, esp_font, esp_fs,
+                ImVec2(std::floor(bcx - tsz.x * 0.5f), std::floor(bottom_y)),
                 IM_COL32((int)(tc[0]*255),(int)(tc[1]*255),(int)(tc[2]*255),(int)(tc[3]*255)),
                 tool_buf);
-            bottom_y += tsz.y + 1.0f;
+            bottom_y += tsz.y + 2.0f;
         }
 
         if (Cheat::g_Settings.esp.flags && cache.humanoid) {
@@ -637,18 +684,19 @@ void Cheat::Visuals::ESP::Render()
                     add_flag("speed", IM_COL32(245, 220, 80, 255));
             }
 
-            const float flag_fs = (std::max)(9.0f, esp_fs * 0.8f);
-            float flag_y = min_y;
+            float flag_y = by1;
             for (int i = 0; i < flag_count; ++i) {
-                DrawTextWithOutline(draw_list, esp_font, flag_fs,
-                    ImVec2(max_x + 4.0f, flag_y), flag_list[i].color, flag_list[i].text);
-                flag_y += flag_fs + 1.0f;
+                DrawTextWithOutline(draw_list, esp_font, esp_fs,
+                    ImVec2(std::floor(bx2 + 4.0f), std::floor(flag_y)),
+                    flag_list[i].color, flag_list[i].text);
+                flag_y += esp_fs + 2.0f;
             }
         }
 
         if (Cheat::g_Settings.esp.skeleton) {
             const auto& sc = Cheat::g_Settings.esp.skeleton_color;
-            const ImU32 skel_color = IM_COL32((int)(sc[0]*255),(int)(sc[1]*255),(int)(sc[2]*255),(int)(sc[3]*255));
+            const ImU32 skel_color = aim_target ? k_aim_red : IM_COL32(
+                (int)(sc[0]*255),(int)(sc[1]*255),(int)(sc[2]*255),(int)(sc[3]*255));
 
             auto find_part = [&](const std::shared_ptr<Instance>& part) -> const PartData* {
                 if (!part) return nullptr;

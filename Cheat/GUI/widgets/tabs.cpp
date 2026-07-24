@@ -1,10 +1,9 @@
 #include "tabs.h"
 #include "widgets.h"
+#include "../colors/colors.h"
 #include "imgui/imgui_internal.h"
 
 namespace {
-    constexpr ImU32 k_tab_active_text = IM_COL32(51, 122, 231, 255);
-    constexpr ImU32 k_tab_inactive_text = IM_COL32(0x80, 0x80, 0x80, 255);
     constexpr ImU32 k_tab_inactive_hover_text = IM_COL32(0xd0, 0xd0, 0xd0, 255);
 
     constexpr ImU32 k_tab_gradient[] = {
@@ -266,9 +265,9 @@ namespace widgets {
             }
 
             const ImU32 text_color = is_active
-                ? k_tab_active_text
+                ? colors::accent_u32()
                 : ImGui::ColorConvertFloat4ToU32(ImLerp(
-                      ImGui::ColorConvertU32ToFloat4(k_tab_inactive_text),
+                      ImGui::ColorConvertU32ToFloat4(colors::text_inactive_u32()),
                       ImGui::ColorConvertU32ToFloat4(k_tab_inactive_hover_text),
                       tab_hover[i]));
 

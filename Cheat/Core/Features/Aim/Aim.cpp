@@ -1,5 +1,7 @@
 #define NOMINMAX
 #include "Aim.h"
+#include "RaycastSilent.h"
+#include "MagicBullet.h"
 #include "../../Settings.h"
 #include "../../Globals/Globals.h"
 #include "../../Memory/Memory.h"
@@ -7,11 +9,12 @@
 #include "../../Roblox/Math/Math.h"
 #include "../../Roblox/Engine/Classes/Classes.h"
 #include "../../PlayerHandler/PlayerHandler.h"
+#include "../../../Renderer/Renderer.h"
 #include "../../../GUI/imgui/imgui.h"
 #include <Windows.h>
 #include <cmath>
+#include <cfloat>
 #include <algorithm>
-#include <cstdlib>
 
 namespace Cheat {
     namespace Features {
@@ -21,12 +24,16 @@ namespace Cheat {
 
             bool s_was_pressed = false;
             bool s_toggled     = false;
+            bool s_force_mb_was = false;
+            bool s_force_mb_tog = false;
 
-            std::uint64_t s_target     = 0;
-            int           s_cycle      = 0;
+            std::uint64_t s_target      = 0;
+            int           s_cycle       = 0;
             double        s_last_switch = 0.0;
             double        s_engage_at   = 0.0;
             std::uint64_t s_pending     = 0;
+            int           s_aim_part    = Settings::AIM_HEAD;
+            Vector3       s_aim_point{};
 
             const Instance* part_instance(const PlayerCache& c, int part) {
                 switch (part) {
@@ -58,14 +65,20 @@ namespace Cheat {
                 return enabled[s_cycle];
             }
 
+            ImVec2 cursor_client() {
+                POINT p{};
+                if (!GetCursorPos(&p))
+                    return ImGui::GetIO().MousePos;
+
+                if (HWND overlay = Renderer::GetHwnd())
+                    ScreenToClient(overlay, &p);
+                return ImVec2(static_cast<float>(p.x), static_cast<float>(p.y));
+            }
+
             ImVec2 fov_anchor(const Config& cfg) {
                 const ImGuiIO& io = ImGui::GetIO();
-                if (cfg.fov_position == 1) {
-                    POINT p{};
-                    if (GetCursorPos(&p))
-                        return ImVec2(static_cast<float>(p.x), static_cast<float>(p.y));
-                    return io.MousePos;
-                }
+                if (cfg.fov_position == 1)
+                    return cursor_client();
                 return ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
             }
 
@@ -92,13 +105,15 @@ namespace Cheat {
                 const float inv = 1.0f / w;
                 out.x = (dim.x * 0.5f) + (x * inv * dim.x * 0.5f);
                 out.y = (dim.y * 0.5f) - (y * inv * dim.y * 0.5f);
-                return true;
-            }
 
-            float frand(float mag) {
-                if (mag <= 0.0f) return 0.0f;
-                const float r = (static_cast<float>(std::rand()) / RAND_MAX) * 2.0f - 1.0f;
-                return r * mag;
+                if (HWND oh = Renderer::GetHwnd()) {
+                    RECT ocr{};
+                    if (GetClientRect(oh, &ocr) && dim.x > 1.0f && dim.y > 1.0f) {
+                        out.x *= (float)(ocr.right - ocr.left) / dim.x;
+                        out.y *= (float)(ocr.bottom - ocr.top) / dim.y;
+                    }
+                }
+                return true;
             }
 
             struct Scene {
@@ -107,8 +122,15 @@ namespace Cheat {
                 Vector2       viewport{};
                 Camera        camera{ 0 };
                 Vector3       cam_pos{};
-                std::uint64_t local = 0;
+                std::uint64_t local_player = 0;
+                std::uint64_t local_char   = 0;
             };
+
+            bool is_local_entry(const PlayerCache& cache, const Scene& sc) {
+                if (sc.local_player && cache.address == sc.local_player) return true;
+                if (sc.local_char && cache.address == sc.local_char) return true;
+                return false;
+            }
 
             Scene resolve_scene() {
                 Scene s;
@@ -125,9 +147,13 @@ namespace Cheat {
                 const uintptr_t ve = g_Memory.Read<uintptr_t>(base + Offsets::VisualEngine::Pointer);
                 s.view = g_Memory.Read<Matrix4x4>(ve + Offsets::VisualEngine::ViewMatrix);
 
-                if (g_Memory.IsValid(Globals::Players->address))
-                    s.local = g_Memory.Read<std::uint64_t>(
+                if (g_Memory.IsValid(Globals::Players->address)) {
+                    s.local_player = g_Memory.Read<std::uint64_t>(
                         Globals::Players->address + Offsets::Player::LocalPlayer);
+                    if (g_Memory.IsValid(s.local_player))
+                        s.local_char = g_Memory.Read<std::uint64_t>(
+                            s.local_player + Offsets::Player::ModelInstance);
+                }
                 s.ok = true;
                 return s;
             }
@@ -138,19 +164,25 @@ namespace Cheat {
                 const ImVec2  anchor = fov_anchor(cfg);
                 const Vector2 anchor_v(anchor.x, anchor.y);
                 const float   fov_r  = cfg.fov_enabled ? (std::max)(1.0f, cfg.fov_size) : 1e9f;
+                const float   sticky_r = fov_r * (std::max)(1.0f, cfg.sticky_fov_scale);
 
                 bool    found_sticky = false;
                 Vector3 sticky_world{};
                 Vector2 sticky_screen{};
 
                 bool          found_best = false;
-                float         best_dist  = fov_r;
+                float         best_dist  = FLT_MAX;
                 std::uint64_t best_addr  = 0;
                 Vector3       best_world{};
                 Vector2       best_screen{};
 
+                if (s_target && (s_target == sc.local_player || s_target == sc.local_char))
+                    s_target = 0;
+                if (s_pending && (s_pending == sc.local_player || s_pending == sc.local_char))
+                    s_pending = 0;
+
                 PlayerHandler::ForEachPlayer([&](const PlayerCache& cache) {
-                    if (cache.address == sc.local) return;
+                    if (is_local_entry(cache, sc)) return;
 
                     const Instance* p = part_instance(cache, part);
                     if (!p || !g_Memory.IsValid(p->address)) return;
@@ -159,8 +191,8 @@ namespace Cheat {
                     const Vector3 world = bp.GetPosition();
 
                     if (cfg.distance_check) {
-                        const float d = (world - sc.cam_pos).Length();
-                        if (d > cfg.max_distance) return;
+                        const float dist3 = (world - sc.cam_pos).Length();
+                        if (dist3 > cfg.max_distance) return;
                     }
 
                     Vector2 screen{};
@@ -168,15 +200,16 @@ namespace Cheat {
 
                     const float dx = screen.x - anchor_v.x;
                     const float dy = screen.y - anchor_v.y;
-                    const float d  = std::sqrt(dx*dx + dy*dy);
+                    const float d  = std::sqrt(dx * dx + dy * dy);
 
-                    if (cfg.sticky && cache.address == s_target &&
-                        d <= fov_r * (std::max)(1.0f, cfg.sticky_fov_scale)) {
+                    if (cfg.sticky && s_target != 0 && cache.address == s_target &&
+                        d <= sticky_r) {
                         found_sticky  = true;
                         sticky_world  = world;
                         sticky_screen = screen;
                     }
 
+                    if (d > fov_r) return;
                     if (d < best_dist) {
                         best_dist   = d;
                         best_addr   = cache.address;
@@ -186,12 +219,29 @@ namespace Cheat {
                     }
                 });
 
-                if (found_sticky) {
+                if (cfg.sticky && found_sticky) {
                     out_world  = sticky_world;
                     out_screen = sticky_screen;
+                    s_aim_part  = part;
+                    s_aim_point = sticky_world;
                     return true;
                 }
-                if (!found_best) { s_pending = 0; return false; }
+
+                if (!found_best) {
+                    s_pending = 0;
+                    s_target  = 0;
+                    return false;
+                }
+
+                if (!cfg.sticky) {
+                    s_target   = best_addr;
+                    s_pending  = 0;
+                    out_world  = best_world;
+                    out_screen = best_screen;
+                    s_aim_part  = part;
+                    s_aim_point = best_world;
+                    return true;
+                }
 
                 const double now = ImGui::GetTime();
                 if (cfg.humanize && cfg.reaction_ms > 0.0f && best_addr != s_target) {
@@ -207,23 +257,18 @@ namespace Cheat {
                 s_pending  = 0;
                 out_world  = best_world;
                 out_screen = best_screen;
+                s_aim_part  = part;
+                s_aim_point = best_world;
                 return true;
             }
 
-            void apply_mouse(const Config& cfg, const Vector2& target_screen, float dist01) {
-                POINT cur{};
-                if (!GetCursorPos(&cur)) return;
+            void apply_mouse(const Config& cfg, const Vector2& target_screen) {
+                const ImVec2 cur = cursor_client();
 
-                const float smooth = (std::max)(1.0f,
-                    cfg.smoothness * (std::max)(0.05f, Settings::sample_curve(cfg.smooth_curve, dist01)));
-                float dx = (target_screen.x - static_cast<float>(cur.x)) / smooth;
-                float dy = (target_screen.y - static_cast<float>(cur.y)) / smooth;
-
-                if (cfg.humanize) {
-                    const float jm = cfg.jitter * Settings::sample_curve(cfg.jitter_curve, dist01);
-                    dx += frand(jm);
-                    dy += frand(jm);
-                }
+                const float sx = (std::max)(0.1f, cfg.smooth_x);
+                const float sy = (std::max)(0.1f, cfg.smooth_y);
+                const float dx = (target_screen.x - cur.x) / sx;
+                const float dy = (target_screen.y - cur.y) / sy;
 
                 const int idx = static_cast<int>(std::lround(dx));
                 const int idy = static_cast<int>(std::lround(dy));
@@ -237,7 +282,7 @@ namespace Cheat {
                 SendInput(1, &in, sizeof(in));
             }
 
-            void apply_camera(const Config& cfg, const Scene& sc, const Vector3& target_world, float dist01) {
+            void apply_camera(const Config& cfg, const Scene& sc, const Vector3& target_world) {
                 if (!g_Memory.IsValid(sc.camera.address)) return;
 
                 Vector3 want = (target_world - sc.cam_pos);
@@ -249,15 +294,13 @@ namespace Cheat {
                 if (cur_look.LengthSquared() < 1e-6f) cur_look = want;
                 cur_look.Normalize();
 
-                const float smooth = (std::max)(1.0f,
-                    cfg.smoothness * (std::max)(0.05f, Settings::sample_curve(cfg.smooth_curve, dist01)));
-                const float t = 1.0f / smooth;
-                Vector3 look = cur_look + (want - cur_look) * t;
-                if (cfg.humanize) {
-                    const float jm = cfg.jitter * Settings::sample_curve(cfg.jitter_curve, dist01) * 0.001f;
-                    look.x += frand(jm);
-                    look.y += frand(jm);
-                }
+                const float tx = 1.0f / (std::max)(0.1f, cfg.smooth_x);
+                const float ty = 1.0f / (std::max)(0.1f, cfg.smooth_y);
+                const float tz = (tx + ty) * 0.5f;
+                Vector3 look(
+                    cur_look.x + (want.x - cur_look.x) * tx,
+                    cur_look.y + (want.y - cur_look.y) * ty,
+                    cur_look.z + (want.z - cur_look.z) * tz);
                 if (look.LengthSquared() < 1e-6f) return;
                 look.Normalize();
 
@@ -280,11 +323,17 @@ namespace Cheat {
         void Aim::Render() {
             Config& cfg = g_Settings.aim.active();
 
-            if (g_Settings.aim.type != 2)
-                draw_fov(cfg);
+            RaycastSilent::Ensure(true);
+
+            draw_fov(cfg);
 
             const int key = g_Settings.aim.bind;
-            if (key == 0) { s_was_pressed = false; s_toggled = false; return; }
+            if (key == 0) {
+                s_was_pressed = false;
+                s_toggled = false;
+                RaycastSilent::SetActive(false);
+                return;
+            }
 
             const bool pressed = (GetAsyncKeyState(key) & 0x8000) != 0;
             bool       active  = false;
@@ -296,23 +345,72 @@ namespace Cheat {
             }
             s_was_pressed = pressed;
 
-            if (!active) { s_target = 0; s_pending = 0; return; }
-            if (g_Settings.aim.type == 2) return;
+            if (!active) {
+                s_target = 0;
+                s_pending = 0;
+                RaycastSilent::SetActive(false);
+                return;
+            }
 
             const Scene sc = resolve_scene();
-            if (!sc.ok) return;
+            if (!sc.ok) {
+                s_target = 0;
+                RaycastSilent::SetActive(false);
+                return;
+            }
 
             Vector3 world{};
             Vector2 screen{};
-            if (!select_target(cfg, sc, world, screen)) return;
+            if (!select_target(cfg, sc, world, screen)) {
+                s_target = 0;
+                RaycastSilent::SetActive(false);
+                return;
+            }
 
-            float dist01 = 0.0f;
-            if (cfg.max_distance > 1.0f)
-                dist01 = (world - sc.cam_pos).Length() / cfg.max_distance;
+            if (g_Settings.aim.type == 0) {
+                RaycastSilent::SetActive(false);
+                apply_mouse(cfg, screen);
+            } else if (g_Settings.aim.type == 1) {
+                RaycastSilent::SetActive(false);
+                apply_camera(cfg, sc, world);
+            } else if (g_Settings.aim.silent_method == Settings::SILENT_RAYCAST) {
 
-            if (g_Settings.aim.type == 0) apply_mouse(cfg, screen, dist01);
-            else                          apply_camera(cfg, sc, world, dist01);
+                bool force_mb = false;
+                const int fk = g_Settings.aim.force_magic_key;
+                if (fk != 0) {
+                    const bool fdown = (GetAsyncKeyState(fk) & 0x8000) != 0;
+                    if (g_Settings.aim.force_magic_mode == 1) {
+                        if (fdown && !s_force_mb_was)
+                            s_force_mb_tog = !s_force_mb_tog;
+                        force_mb = s_force_mb_tog;
+                    } else {
+                        force_mb = fdown;
+                    }
+                    s_force_mb_was = fdown;
+                    g_Settings.aim.force_magic_bullet = force_mb;
+                } else if (g_Settings.aim.force_magic_bullet) {
+                    force_mb = true;
+                    s_force_mb_was = false;
+                } else {
+                    s_force_mb_was = false;
+                    s_force_mb_tog = false;
+                }
+
+                if (force_mb)
+                    MagicBullet::SetActive(true, world);
+                else
+                    RaycastSilent::SetActive(true, world, false);
+            } else if (g_Settings.aim.silent_method == Settings::SILENT_MAGIC_BULLET) {
+                MagicBullet::SetActive(true, world);
+            } else {
+
+                RaycastSilent::SetActive(false);
+            }
         }
+
+        std::uint64_t Aim::CurrentTarget() { return s_target; }
+        int     Aim::CurrentAimPart()  { return s_aim_part; }
+        Vector3 Aim::CurrentAimPoint() { return s_aim_point; }
 
         void Aim::mouse()    {}
         void Aim::viewport() {}

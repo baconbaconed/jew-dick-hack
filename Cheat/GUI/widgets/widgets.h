@@ -52,8 +52,6 @@ namespace widgets {
     bool keybind(const char* label, int* key, int* activation_mode = nullptr);
     bool checkbox_keybind(const char* label, bool* value, int* key, int* activation_mode = nullptr);
 
-    bool curve_editor(const char* id, float* points, int count, const ImVec2& size);
-
     bool begin_child_panel(
         const char* id,
         const ImVec2& size,

@@ -21,6 +21,34 @@ namespace {
         adjusted.w *= std::clamp(alpha, 0.f, 1.f);
         return ImGui::ColorConvertFloat4ToU32(adjusted);
     }
+
+    void Set4(float out[4], float r, float g, float b, float a = 1.0f) {
+        out[0] = r; out[1] = g; out[2] = b; out[3] = a;
+    }
+
+    void Set4u8(float out[4], int r, int g, int b, int a = 255) {
+        out[0] = r / 255.0f;
+        out[1] = g / 255.0f;
+        out[2] = b / 255.0f;
+        out[3] = a / 255.0f;
+    }
+
+    ImVec4 From4(const float c[4]) {
+        return ImVec4(c[0], c[1], c[2], c[3]);
+    }
+
+    static const char* k_theme_names[] = {
+        "default",
+        "gamesense",
+        "fatality",
+        "neverlose",
+        "onetap",
+        "primordial",
+        "nixware",
+        "aimware",
+        "custom",
+    };
+    static_assert(sizeof(k_theme_names) / sizeof(k_theme_names[0]) == colors::Theme_Count, "themes");
 }
 
 namespace colors {
@@ -37,6 +65,113 @@ namespace colors {
     ImVec4 content_inner_border = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
     ImVec4 content_fill = ImVec4(21.0f / 255.0f, 21.0f / 255.0f, 20.0f / 255.0f, 1.0f);
     ImVec4 child_fill = ImVec4(15.0f / 255.0f, 14.0f / 255.0f, 14.0f / 255.0f, 1.0f);
+
+    const char* const* ThemeNames() { return k_theme_names; }
+
+    void ApplyPreset(int theme, float accent_c[4], float text_active_c[4], float text_inactive_c[4],
+                     float outer_border_c[4], float inner_border_c[4], float panel_fill_c[4],
+                     float content_outer_c[4], float content_inner_c[4],
+                     float content_fill_c[4], float child_fill_c[4]) {
+        theme = (std::clamp)(theme, 0, Theme_Count - 1);
+        if (theme == Theme_Custom) return;
+
+        Set4u8(text_active_c,   255, 255, 255);
+        Set4u8(text_inactive_c, 136, 136, 136);
+        Set4u8(outer_border_c,    0,   0,   0);
+        Set4u8(inner_border_c,   31,  30,  31);
+        Set4u8(panel_fill_c,     17,  17,  16);
+        Set4u8(content_outer_c,  31,  30,  31);
+        Set4u8(content_inner_c,   0,   0,   0);
+        Set4u8(content_fill_c,   21,  21,  20);
+        Set4u8(child_fill_c,     15,  14,  14);
+
+        switch (theme) {
+        case Theme_Gamesense:
+            Set4u8(accent_c,        143, 188,  90);
+            Set4u8(panel_fill_c,     12,  12,  12);
+            Set4u8(content_fill_c,   17,  17,  17);
+            Set4u8(child_fill_c,     10,  10,  10);
+            Set4u8(inner_border_c,   40,  40,  40);
+            Set4u8(content_outer_c,  40,  40,  40);
+            Set4u8(text_inactive_c, 110, 110, 110);
+            break;
+        case Theme_Fatality:
+            Set4u8(accent_c,        232,  64,  94);
+            Set4u8(panel_fill_c,     18,  12,  18);
+            Set4u8(content_fill_c,   24,  16,  24);
+            Set4u8(child_fill_c,     14,   9,  14);
+            Set4u8(inner_border_c,   48,  28,  42);
+            Set4u8(content_outer_c,  48,  28,  42);
+            Set4u8(text_inactive_c, 150, 120, 140);
+            break;
+        case Theme_Neverlose:
+            Set4u8(accent_c,         70, 145, 255);
+            Set4u8(panel_fill_c,     14,  16,  22);
+            Set4u8(content_fill_c,   18,  22,  30);
+            Set4u8(child_fill_c,     11,  13,  18);
+            Set4u8(inner_border_c,   36,  44,  58);
+            Set4u8(content_outer_c,  36,  44,  58);
+            Set4u8(text_inactive_c, 120, 135, 160);
+            break;
+        case Theme_Onetap:
+            Set4u8(accent_c,        255, 140,  40);
+            Set4u8(panel_fill_c,     16,  14,  12);
+            Set4u8(content_fill_c,   22,  19,  16);
+            Set4u8(child_fill_c,     12,  11,   9);
+            Set4u8(inner_border_c,   48,  38,  28);
+            Set4u8(content_outer_c,  48,  38,  28);
+            Set4u8(text_inactive_c, 150, 130, 110);
+            break;
+        case Theme_Primordial:
+            Set4u8(accent_c,        168,  85, 247);
+            Set4u8(panel_fill_c,     16,  12,  22);
+            Set4u8(content_fill_c,   22,  16,  30);
+            Set4u8(child_fill_c,     12,   9,  16);
+            Set4u8(inner_border_c,   48,  34,  64);
+            Set4u8(content_outer_c,  48,  34,  64);
+            Set4u8(text_inactive_c, 145, 130, 170);
+            break;
+        case Theme_Nixware:
+            Set4u8(accent_c,         40, 210, 190);
+            Set4u8(panel_fill_c,     12,  16,  16);
+            Set4u8(content_fill_c,   16,  22,  22);
+            Set4u8(child_fill_c,      9,  13,  13);
+            Set4u8(inner_border_c,   30,  48,  46);
+            Set4u8(content_outer_c,  30,  48,  46);
+            Set4u8(text_inactive_c, 110, 145, 140);
+            break;
+        case Theme_Aimware:
+            Set4u8(accent_c,         55, 120, 220);
+            Set4u8(panel_fill_c,     20,  20,  22);
+            Set4u8(content_fill_c,   26,  26,  30);
+            Set4u8(child_fill_c,     15,  15,  18);
+            Set4u8(inner_border_c,   42,  42,  50);
+            Set4u8(content_outer_c,  42,  42,  50);
+            Set4u8(text_inactive_c, 130, 130, 145);
+            break;
+        case Theme_Default:
+        default:
+            Set4u8(accent_c,         51, 122, 231);
+            break;
+        }
+    }
+
+    void SyncFromSettings(const float accent_c[4], const float text_active_c[4], const float text_inactive_c[4],
+                          const float outer_border_c[4], const float inner_border_c[4], const float panel_fill_c[4],
+                          const float content_outer_c[4], const float content_inner_c[4],
+                          const float content_fill_c[4], const float child_fill_c[4]) {
+        accent              = From4(accent_c);
+        text_active         = From4(text_active_c);
+        text_inactive       = From4(text_inactive_c);
+        outer_border        = From4(outer_border_c);
+        inner_border        = From4(inner_border_c);
+        panel_fill          = From4(panel_fill_c);
+        content_outer_border = From4(content_outer_c);
+        content_inner_border = From4(content_inner_c);
+        content_fill        = From4(content_fill_c);
+        child_fill          = From4(child_fill_c);
+        apply_style();
+    }
 
     ImU32 accent_u32(float alpha) {
         ImVec4 color = accent;

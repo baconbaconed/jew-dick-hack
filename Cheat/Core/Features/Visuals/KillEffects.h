@@ -1,0 +1,24 @@
+#pragma once
+
+namespace Cheat {
+    namespace Visuals {
+        namespace KillEffects {
+
+            enum Effect : int {
+                PixelBurst = 0,
+                Confetti,
+                Shatter,
+                EffectCount
+            };
+
+            const char* const* EffectNames();
+            inline int EffectNameCount() { return EffectCount; }
+
+            const char* const* HitDataModeNames();
+            inline int HitDataModeNameCount() { return 5; }
+
+            void Tick();
+
+        }
+    }
+}

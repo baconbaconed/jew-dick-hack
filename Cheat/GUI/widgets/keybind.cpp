@@ -1,5 +1,6 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "widgets.h"
+#include "../colors/colors.h"
 #include "../resources/fonts/fonts.h"
 #include "imgui/imgui_internal.h"
 #include <Windows.h>
@@ -19,7 +20,6 @@ namespace {
     constexpr ImU32 k_fill = IM_COL32(18, 19, 19, 255);
     constexpr ImU32 k_text_inactive = IM_COL32(100, 100, 100, 255);
     constexpr ImU32 k_text_hover = IM_COL32(255, 255, 255, 255);
-    constexpr ImU32 k_accent = IM_COL32(51, 122, 231, 255);
 
     const char* mode_name(int mode) {
         return mode == 1 ? "toggle" : "hold";
@@ -141,7 +141,7 @@ namespace {
             key_name(*key, text_buf, IM_ARRAYSIZE(text_buf));
         }
 
-        const ImU32 text_color = *capturing ? k_accent : (hovered ? k_text_hover : k_text_inactive);
+        const ImU32 text_color = *capturing ? colors::accent_u32() : (hovered ? k_text_hover : k_text_inactive);
         const ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, text_buf);
         widgets::draw_outlined_text(
             draw_list,

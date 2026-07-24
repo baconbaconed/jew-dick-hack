@@ -11,10 +11,11 @@ namespace Cheat {
             bool box{ false };
             bool name{ false };
             bool skeleton{ false };
-            bool outline{ false };
             bool chams{ false };
+
             int  chams_mode{ 0 };
-            bool preview{ true };
+            int  chams_shader{ 0 };
+            bool preview{ false };
 
             bool healthbar{ false };
             bool health_text{ false };
@@ -23,7 +24,7 @@ namespace Cheat {
             bool flags{ false };
 
             int   font{ 0 };
-            float font_size{ 14.f };
+            float font_size{ 13.f };
             int   box_mode{ 0 };
             int   name_mode{ 0 };
             int   distance_unit{ 0 };
@@ -33,7 +34,6 @@ namespace Cheat {
             float box_color[4]{ 1.f, 1.f, 1.f, 1.f };
             float name_color[4]{ 1.f, 1.f, 1.f, 1.f };
             float skeleton_color[4]{ 1.f, 1.f, 1.f, 1.f };
-            float outline_color[4]{ 1.f, 1.f, 1.f, 1.f };
             float chams_outline_color[4]{ 1.f, 1.f, 1.f, 1.f };
             float chams_fill_color[4]{ 1.f, 1.f, 1.f, 0.4f };
             float distance_color[4]{ 1.f, 1.f, 1.f, 1.f };
@@ -52,64 +52,108 @@ namespace Cheat {
             AIM_PART_COUNT
         };
 
-        static constexpr int kAimCurvePoints = 6;
-
-        static float sample_curve(const float* pts, float t) {
-            t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-            const float f = t * (kAimCurvePoints - 1);
-            const int   i = static_cast<int>(f);
-            if (i >= kAimCurvePoints - 1) return pts[kAimCurvePoints - 1];
-            const float frac = f - i;
-            return pts[i] + (pts[i + 1] - pts[i]) * frac;
-        }
-
         struct AimbotConfig {
-            bool  fov_enabled{ true };
+            bool  fov_enabled{ false };
             float fov_size{ 120.0f };
             int   fov_position{ 0 };
             bool  distance_check{ false };
             float max_distance{ 1000.0f };
-            bool  visible_only{ true };
+            bool  visible_only{ false };
 
-            bool  parts[AIM_PART_COUNT]{ true, false, false, false,
+            bool  parts[AIM_PART_COUNT]{ false, false, false, false,
                                          false, false, false, false };
             float switch_time{ 0.40f };
 
-            float smoothness{ 6.0f };
+            float smooth_x{ 1.0f };
+            float smooth_y{ 1.0f };
 
             bool  humanize{ false };
             float reaction_ms{ 60.0f };
-            float jitter{ 1.5f };
-            bool  sticky{ true };
+            bool  sticky{ false };
             float sticky_fov_scale{ 1.5f };
 
-            float jitter_curve[kAimCurvePoints]{ 0.15f, 0.30f, 0.50f, 0.68f, 0.85f, 1.0f };
-            float smooth_curve[kAimCurvePoints]{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-
             float fov_color[4]{ 0.20f, 0.478f, 0.906f, 0.86f };
+        };
+
+        enum SilentMethod {
+            SILENT_VIEWPORT = 0,
+            SILENT_MOUSE,
+            SILENT_RAYCAST,
+            SILENT_MAGIC_BULLET,
+            SILENT_METHOD_COUNT
         };
 
         struct {
             int  bind{ 0 };
             int  bind_mode{ 0 };
             int  type{ 0 };
-            bool params_window{ false };
+            int  silent_method{ SILENT_RAYCAST };
+
+            bool force_magic_bullet{ false };
+            int  force_magic_key{ 0 };
+            int  force_magic_mode{ 0 };
 
             AimbotConfig mouse;
             AimbotConfig camera;
+            AimbotConfig silent;
 
             AimbotConfig& active() {
-                return type == 1 ? camera : mouse;
+                if (type == 1) return camera;
+                if (type == 2) return silent;
+                return mouse;
+            }
+
+            bool silent_raycast() const {
+                return type == 2 && silent_method == SILENT_RAYCAST;
+            }
+            bool silent_magic() const {
+                return type == 2 && silent_method == SILENT_MAGIC_BULLET;
+            }
+
+            bool silent_uses_raycast_hook() const {
+                return silent_raycast() || silent_magic();
             }
         } aim;
 
         struct {
-            bool  time{ false };   float time_value{ 14.f };
-            bool  grass{ false };  float grass_length{ 0.5f };
-            bool  stars{ false };  int   star_count{ 3000 };
-            bool  sun{ false };    float sun_size{ 21.f };
-            bool  moon{ false };   float moon_size{ 11.f };
+            bool  no_shadow{ false }; float brightness{ 5.0f };
+            bool  fog{ false };
+            float fog_start{ 0.f };
+            float fog_end{ 100000.f };
+            float fog_color[4]{ 1.f, 1.f, 1.f, 1.f };
         } world;
+
+        struct {
+            bool enabled{ false };
+            int  effect{ 0 };
+        } killfx;
+
+        struct {
+            bool  enabled{ false };
+            float size{ 1.0f };
+            float duration{ 0.55f };
+        } hitmarker;
+
+        struct {
+            bool  enabled{ false };
+            int   index{ 0 };
+            float volume{ 100.0f };
+        } hitsound;
+
+        enum HitDataMode {
+            HITDATA_TYPE = 0,
+            HITDATA_DAMAGE,
+            HITDATA_HEALTH,
+            HITDATA_DISTANCE,
+            HITDATA_PART,
+            HITDATA_MODE_COUNT
+        };
+        struct {
+            bool  enabled{ false };
+            bool  modes[HITDATA_MODE_COUNT]{ true, false, false, false, false };
+            float duration{ 1.35f };
+            float size{ 15.0f };
+        } hitdata;
 
         struct {
             bool  fps_unlock{ false }; int   fps_cap{ 240 };
@@ -133,19 +177,24 @@ namespace Cheat {
         } misc;
 
         struct {
-            bool  panel{ false };
-            bool  fullbright{ false };  float brightness{ 3.0f };
-            bool  ambient{ false };     float ambient_color[4]{ 1.f, 1.f, 1.f, 1.f };
-            bool  outdoor{ false };     float outdoor_color[4]{ 1.f, 1.f, 1.f, 1.f };
-            bool  fog{ false };         float fog_end{ 100000.f };
-            bool  fog_color_on{ false };float fog_color[4]{ 1.f, 1.f, 1.f, 1.f };
-        } wvis;
+            int   theme{ 0 };
+            float accent[4]{ 51.f / 255.f, 122.f / 255.f, 231.f / 255.f, 1.f };
+            float text_active[4]{ 1.f, 1.f, 1.f, 1.f };
+            float text_inactive[4]{ 136.f / 255.f, 136.f / 255.f, 136.f / 255.f, 1.f };
+            float outer_border[4]{ 0.f, 0.f, 0.f, 1.f };
+            float inner_border[4]{ 31.f / 255.f, 30.f / 255.f, 31.f / 255.f, 1.f };
+            float panel_fill[4]{ 17.f / 255.f, 17.f / 255.f, 16.f / 255.f, 1.f };
+            float content_outer[4]{ 31.f / 255.f, 30.f / 255.f, 31.f / 255.f, 1.f };
+            float content_inner[4]{ 0.f, 0.f, 0.f, 1.f };
+            float content_fill[4]{ 21.f / 255.f, 21.f / 255.f, 20.f / 255.f, 1.f };
+            float child_fill[4]{ 15.f / 255.f, 14.f / 255.f, 14.f / 255.f, 1.f };
+        } gui;
     };
 
     inline Settings g_Settings;
 
     struct CustomVisuals {
-        bool  box{ true };        float box_color[4]{ 1.f, 1.f, 1.f, 1.f };
+        bool  box{ false };       float box_color[4]{ 1.f, 1.f, 1.f, 1.f };
         bool  filled{ false };    float fill_color[4]{ 1.f, 1.f, 1.f, 0.25f };
         bool  name{ false };      float name_color[4]{ 1.f, 1.f, 1.f, 1.f };
         bool  distance{ false };  float distance_color[4]{ 1.f, 1.f, 1.f, 1.f };
@@ -154,10 +203,10 @@ namespace Cheat {
 
     struct CustomTarget {
         char label[64]{ "" };
-        int  kind{ 0 };            // 0 = folder, 1 = model
-        int  resolve{ 0 };         // 0 = exact path/address, 1 = by name
+        int  kind{ 0 };
+        int  resolve{ 0 };
         char query[128]{ "" };
-        bool enabled{ true };
+        bool enabled{ false };
         CustomVisuals vis;
     };
     inline std::vector<CustomTarget> g_CustomTargets;

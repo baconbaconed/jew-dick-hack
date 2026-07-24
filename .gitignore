@@ -1,6 +1,9 @@
 # Visual Studio state
 .vs/
 
+# Temp download / regen scratch
+Cheat/Core/Features/Misc/_hitsounds_tmp/
+
 # Build output (root output dir + intermediate dir)
 /x64/
 /Win32/

@@ -10,10 +10,10 @@ namespace {
     constexpr float k_slider_width_default = 161.0f;
     constexpr float k_slider_width_min = 80.0f;
     constexpr float k_widget_side_pad = 6.0f;
-    constexpr float k_slider_height = 12.0f;
+    constexpr float k_slider_height = 16.0f;
     constexpr float k_label_track_gap = 3.0f;
     constexpr float k_label_text_offset_x = 1.0f;
-    constexpr float k_value_text_offset_x = 0.0f;
+    constexpr float k_value_track_pad = 4.0f;
     constexpr int k_fill_gradient_count = 8;
 
     float slider_width() {
@@ -117,14 +117,17 @@ namespace {
 
         char value_buf[64];
         ImGui::DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), data_type, data, format);
-        const ImVec2 value_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, value_buf);
 
-        const float row_h = ImMax(label_size.y, value_size.y);
-        const float total_h = row_h + k_label_track_gap + k_slider_height;
+        const float value_font_size = ImMax(10.0f, label_font_size - 2.0f);
+
+        const float row_h = label_size.y;
+        const float total_h = (text[0] != '\0' ? row_h + k_label_track_gap : 0.0f) + k_slider_height;
         const float track_width = slider_width();
         const ImVec2 total_size(track_width, total_h);
 
-        const ImVec2 track_min(pos.x, pos.y + row_h + k_label_track_gap);
+        const ImVec2 track_min(
+            pos.x,
+            pos.y + (text[0] != '\0' ? row_h + k_label_track_gap : 0.0f));
         const ImVec2 track_max(track_min.x + track_width, track_min.y + k_slider_height);
         const ImRect track_bb(track_min, track_max);
         const ImRect total_bb(pos, pos + total_size);
@@ -185,16 +188,26 @@ namespace {
                 text);
         }
 
-        const ImVec2 display_value_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, value_buf);
+        draw_slider_track(draw_list, track_min, track_max, *anim_value);
+
+        const ImVec2 display_value_size =
+            label_font->CalcTextSizeA(value_font_size, FLT_MAX, 0.0f, value_buf);
+        const float fill_x = track_min.x + *anim_value * (track_max.x - track_min.x);
+        float value_x = fill_x - display_value_size.x * 0.5f;
+        value_x = ImClamp(
+            value_x,
+            track_min.x + k_value_track_pad,
+            track_max.x - display_value_size.x - k_value_track_pad);
+        const float value_y =
+            track_min.y + (k_slider_height - display_value_size.y) * 0.5f;
+
         widgets::draw_outlined_text(
             draw_list,
             label_font,
-            label_font_size,
-            ImVec2(ImFloor(pos.x + track_width - display_value_size.x + k_value_text_offset_x), ImFloor(pos.y)),
-            label_color,
+            value_font_size,
+            ImVec2(ImFloor(value_x), ImFloor(value_y)),
+            IM_COL32(255, 255, 255, 255),
             value_buf);
-
-        draw_slider_track(draw_list, track_min, track_max, *anim_value);
 
         return value_changed;
     }
