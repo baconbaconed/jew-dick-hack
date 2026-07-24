@@ -32,19 +32,7 @@ Cheat uses: `slot = module_base + RaycastBoundDesc + RaycastBoundFn`.
 
 ---
 
-## Preferred path A — run the IDA script
-
-If the repo is available:
-
-1. Open the matching IDB for the target Roblox build.
-2. Run `tools/ida_find_raycast_desc.py` (File → Script file…).
-3. Copy printed `RaycastBoundDesc` / `RaycastBoundFn` into `Offsets.h`.
-
-If the script output looks sane (Raycast index maps to a high RVA, nearby methods listed), **stop**. Done.
-
----
-
-## Path B — find via IDA MCP tools (for an AI)
+## Path A — find via IDA MCP tools (for an AI)
 
 Server: `user-ida-pro-mcp`.
 
@@ -206,5 +194,3 @@ Do not ship an offset that was only “nearby” a wrong xref (e.g. reflection d
 7. RaycastBoundFn = 0x80 (live-confirm if possible)
 8. print Offsets.h lines only when steps 3–6 succeeded
 ```
-
-Or simply execute repo script: `tools/ida_find_raycast_desc.py`.
