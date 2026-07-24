@@ -2,31 +2,10 @@
 #include "widgets.h"
 #include "../colors/colors.h"
 #include "imgui/imgui_internal.h"
+#include <algorithm>
 
 namespace {
-    constexpr ImU32 k_tab_inactive_hover_text = IM_COL32(0xd0, 0xd0, 0xd0, 255);
-
-    constexpr ImU32 k_tab_gradient[] = {
-        IM_COL32(28, 29, 28, 255),
-        IM_COL32(28, 28, 28, 255),
-        IM_COL32(28, 28, 28, 255),
-        IM_COL32(26, 27, 26, 255),
-        IM_COL32(26, 27, 26, 255),
-        IM_COL32(27, 27, 26, 255),
-        IM_COL32(27, 27, 26, 255),
-        IM_COL32(24, 24, 25, 255),
-        IM_COL32(24, 24, 24, 255),
-        IM_COL32(24, 24, 24, 255),
-        IM_COL32(22, 22, 23, 255),
-        IM_COL32(22, 22, 23, 255),
-        IM_COL32(22, 23, 23, 255),
-        IM_COL32(22, 23, 23, 255),
-        IM_COL32(20, 20, 21, 255),
-        IM_COL32(20, 20, 21, 255),
-        IM_COL32(21, 21, 20, 255),
-    };
-
-    constexpr int k_tab_gradient_count = IM_ARRAYSIZE(k_tab_gradient);
+    constexpr int k_tab_gradient_count = 17;
     constexpr int k_max_tabs = 8;
 
     struct tab_frame {
@@ -77,7 +56,20 @@ namespace {
             color);
     }
 
-    void draw_tab_gradient(ImDrawList* draw_list, const ImRect& rect) {
+    ImU32 tab_fill_row(int row, int row_count, bool active) {
+        row_count = (std::max)(1, row_count);
+        row = (std::clamp)(row, 0, row_count - 1);
+        const float t = static_cast<float>(row) / static_cast<float>((std::max)(1, row_count - 1));
+        if (active) {
+            const ImVec4 top = ImLerp(colors::content_fill, colors::child_fill, 0.15f);
+            return ImGui::ColorConvertFloat4ToU32(ImLerp(top, colors::content_fill, t));
+        }
+        const ImVec4 top = ImLerp(colors::child_fill, colors::panel_fill, 0.25f);
+        const ImVec4 bot = ImLerp(colors::child_fill, colors::content_fill, 0.35f);
+        return ImGui::ColorConvertFloat4ToU32(ImLerp(top, bot, t));
+    }
+
+    void draw_tab_gradient(ImDrawList* draw_list, const ImRect& rect, bool active) {
         const float height = rect.GetHeight();
         if (draw_list == nullptr || height <= 0.0f) {
             return;
@@ -86,13 +78,12 @@ namespace {
         for (int g = 0; g < k_tab_gradient_count - 1; ++g) {
             const float y0 = rect.Min.y + (height * static_cast<float>(g)) / static_cast<float>(k_tab_gradient_count - 1);
             const float y1 = rect.Min.y + (height * static_cast<float>(g + 1)) / static_cast<float>(k_tab_gradient_count - 1);
+            const ImU32 c0 = tab_fill_row(g, k_tab_gradient_count, active);
+            const ImU32 c1 = tab_fill_row(g + 1, k_tab_gradient_count, active);
             draw_list->AddRectFilledMultiColor(
                 ImVec2(rect.Min.x, y0),
                 ImVec2(rect.Max.x, y1),
-                k_tab_gradient[g],
-                k_tab_gradient[g],
-                k_tab_gradient[g + 1],
-                k_tab_gradient[g + 1]);
+                c0, c0, c1, c1);
         }
     }
 
@@ -244,7 +235,7 @@ namespace widgets {
             const float tab_left = tab_start_x + static_cast<float>(i) * (tab_width + tab_spacing);
             const tab_frame frame = make_tab_frame(tab_left, tab_top, tab_width, panel_top_outer, panel_top_inner);
 
-            draw_tab_gradient(draw_list, frame.fill);
+            draw_tab_gradient(draw_list, frame.fill, is_active);
 
             if (is_active) {
                 draw_list->AddRectFilled(
@@ -252,10 +243,12 @@ namespace widgets {
                     ImVec2(static_cast<float>(frame.inner_r + 1), static_cast<float>(panel_top_inner + 1)),
                     panel_fill);
             } else {
+                const ImU32 seam = ImGui::ColorConvertFloat4ToU32(
+                    ImLerp(colors::child_fill, colors::content_fill, 0.35f));
                 draw_list->AddRectFilled(
                     ImVec2(static_cast<float>(frame.outer_l), static_cast<float>(panel_top_outer - 1)),
                     ImVec2(static_cast<float>(frame.outer_r + 1), static_cast<float>(panel_top_inner + 1)),
-                    panel_fill);
+                    seam);
             }
 
             draw_tab_sides(draw_list, frame, panel_outer_border, panel_inner_border);
@@ -266,10 +259,7 @@ namespace widgets {
 
             const ImU32 text_color = is_active
                 ? colors::accent_u32()
-                : ImGui::ColorConvertFloat4ToU32(ImLerp(
-                      ImGui::ColorConvertU32ToFloat4(colors::text_inactive_u32()),
-                      ImGui::ColorConvertU32ToFloat4(k_tab_inactive_hover_text),
-                      tab_hover[i]));
+                : colors::label_u32(tab_hover[i]);
 
             ImFont* label_font =  is_active ? font_active : font;
             const ImVec2 text_size = label_font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, labels[i]);

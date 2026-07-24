@@ -17,6 +17,9 @@ namespace Cheat {
         std::string displayName;
         std::string toolName;
         std::uint64_t address;
+        std::uint64_t character = 0;
+        std::uint64_t team_folder = 0;
+        bool is_player = false;
         bool isR6 = false;
 
         std::shared_ptr<Instance> head;
@@ -59,6 +62,10 @@ namespace Cheat {
         static void StartCacheThread();
         static void StopCacheThread();
         static std::unordered_map<std::uint64_t, PlayerCache> GetPlayerCache();
+
+        static std::uint64_t ResolveTeamFolder(std::uint64_t character_address);
+        static std::uint64_t LocalTeamFolder();
+        static bool IsTeammate(const PlayerCache& cache, std::uint64_t local_team_folder);
 
         template<typename F>
         static void ForEachPlayer(F&& fn)

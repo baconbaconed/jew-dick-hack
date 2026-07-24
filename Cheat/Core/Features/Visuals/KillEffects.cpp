@@ -137,11 +137,8 @@ namespace Cheat {
                 }
 
                 ImFont* GuiFont() {
-                    if (g_Settings.esp.font == 1 && fonts::tahoma_bold)
-                        return fonts::tahoma_bold;
-                    if (fonts::tahoma) return fonts::tahoma;
-                    if (fonts::tahoma_bold) return fonts::tahoma_bold;
-                    return ImGui::GetFont();
+                    ImFont* f = fonts::selected();
+                    return f ? f : ImGui::GetFont();
                 }
 
                 const char* PartName(int part) {

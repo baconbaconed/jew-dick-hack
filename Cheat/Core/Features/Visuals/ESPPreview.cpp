@@ -288,6 +288,36 @@ namespace {
         dl->AddLine(a, b, IM_COL32(0, 0, 0, 255), 3.0f);
         dl->AddLine(a, b, color, 1.0f);
     }
+
+    ImU32 TierDotColor(int tier, int alpha)
+    {
+        if (tier == Cheat::Settings::PART_PRIMARY)
+            return IM_COL32(90, 160, 255, alpha);
+        if (tier == Cheat::Settings::PART_SECONDARY)
+            return IM_COL32(100, 220, 130, alpha);
+        if (tier == Cheat::Settings::PART_TERTIARY)
+            return IM_COL32(245, 210, 80, alpha);
+        return IM_COL32(0, 0, 0, 0);
+    }
+
+    void DrawFadeDot(ImDrawList* dl, const ImVec2& c, int tier, bool hover)
+    {
+        if (tier == Cheat::Settings::PART_OFF) return;
+
+        const float glow = hover ? 11.0f : 9.0f;
+        const float core = hover ? 2.4f : 2.0f;
+        const int steps = 14;
+        for (int i = steps; i >= 1; --i) {
+            const float t = (float)i / (float)steps;
+            const float r = core + (glow - core) * t;
+            const float falloff = (1.0f - t) * (1.0f - t);
+            const int a = (int)((hover ? 42.0f : 28.0f) * falloff);
+            if (a <= 0) continue;
+            dl->AddCircleFilled(c, r, TierDotColor(tier, a), 32);
+        }
+        dl->AddCircleFilled(c, core, TierDotColor(tier, hover ? 160 : 110), 24);
+        dl->AddCircleFilled(c, core * 0.45f, TierDotColor(tier, hover ? 210 : 150), 16);
+    }
 }
 
 namespace Cheat::Visuals {
@@ -324,11 +354,9 @@ namespace Cheat::Visuals {
         if (dt > 0.1f || dt < 0.0f) dt = 0.016f;
         g_LastTime = now;
 
-        ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
-        const float fs = font && font->LegacySize > 0.0f ? font->LegacySize : 13.0f;
-        ImFont* esp_font = (s.esp.font == 1)
-            ? (fonts::tahoma_bold ? fonts::tahoma_bold : fonts::tahoma)
-            : (fonts::tahoma ? fonts::tahoma : fonts::tahoma_bold);
+        ImFont* font = fonts::ui();
+        const float fs = fonts::ui_size(font);
+        ImFont* esp_font = fonts::selected();
         if (!esp_font) esp_font = ImGui::GetFont();
         const float esp_fs = fonts::snap_px(s.esp.font_size);
 
@@ -341,9 +369,14 @@ namespace Cheat::Visuals {
 
         ImGui::InvisibleButton("##preview_drag", ImVec2(avail.x, modelH));
         const bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        static bool s_dragged = false;
+        if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right))
             g_Renderer.SetAutoSpin(!g_Renderer.IsAutoSpinning());
-        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) {
+        if (ImGui::IsItemActivated())
+            s_dragged = false;
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3.0f)) {
+            s_dragged = true;
+            g_Renderer.SetAutoSpin(false);
             g_Renderer.AddRotationDelta(ImGui::GetIO().MouseDelta.x * 0.007f,
                                         ImGui::GetIO().MouseDelta.y * 0.007f);
             g_Renderer.NotifyManualInput();
@@ -353,6 +386,9 @@ namespace Cheat::Visuals {
 
         const ImVec2 imgMin = origin;
         const ImVec2 imgMax(origin.x + avail.x, origin.y + modelH);
+        const bool clicked_part = hovered && !s_dragged &&
+            ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+            !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
         if (!g_Renderer.IsReady()) {
             const char* msg = "preview model missing";
@@ -494,6 +530,45 @@ namespace Cheat::Visuals {
                         }
                     }
                 }
+
+                {
+                    auto& acfg = Cheat::g_Settings.aim.active();
+                    std::vector<std::pair<int, std::pair<float, float>>> centers;
+                    if (g_Renderer.GetProjectedAimPartCenters(centers)) {
+                        const ImVec2 mouse = ImGui::GetIO().MousePos;
+                        constexpr float k_hit_r = 18.0f;
+                        int best_click = -1;
+                        float best_d2 = k_hit_r * k_hit_r;
+
+                        for (const auto& entry : centers) {
+                            const int part = entry.first;
+                            if (part < 0 || part >= Cheat::Settings::AIM_PART_COUNT) continue;
+                            const ImVec2 c = UV(entry.second.first, entry.second.second);
+                            const float dx = mouse.x - c.x;
+                            const float dy = mouse.y - c.y;
+                            const float d2 = dx * dx + dy * dy;
+                            if (hovered && d2 < best_d2) {
+                                best_d2 = d2;
+                                best_click = part;
+                            }
+                        }
+
+                        for (const auto& entry : centers) {
+                            const int part = entry.first;
+                            if (part < 0 || part >= Cheat::Settings::AIM_PART_COUNT) continue;
+                            const int tier = acfg.part_tier[part];
+                            if (tier == Cheat::Settings::PART_OFF) continue;
+                            const ImVec2 c = UV(entry.second.first, entry.second.second);
+                            DrawFadeDot(dl, c, tier, part == best_click);
+                        }
+
+                        if (clicked_part && best_click >= 0) {
+                            int& tier = acfg.part_tier[best_click];
+                            tier = (tier + 1) % 4;
+                            acfg.SyncPartsFromTiers();
+                        }
+                    }
+                }
             }
         }
 
@@ -503,8 +578,8 @@ namespace Cheat::Visuals {
             dl->AddText(font, fs, ImVec2(origin.x + (avail.x - tsz.x) * 0.5f, y),
                         colors::text_inactive_u32(), t);
         };
-        hint("drag | scroll to zoom", hy);
-        hint("double click to spin", hy + fs + 2.0f);
+        hint("click part: blue > green > yellow", hy);
+        hint("drag rotate | double rmb spin | scroll", hy + fs + 2.0f);
     }
 
 }

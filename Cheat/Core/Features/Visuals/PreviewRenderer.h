@@ -24,7 +24,10 @@ namespace Cheat::Core {
         void Update(float dt_seconds);
         void AddRotationDelta(float dyaw, float dpitch);
         void AddZoom(float delta);
-        void SetAutoSpin(bool on) { m_AutoSpin = on; }
+        void SetAutoSpin(bool on) {
+            m_AutoSpin = on;
+            if (on) m_SpinPauseRemaining = 0.0f;
+        }
         bool IsAutoSpinning() const { return m_AutoSpin; }
         void NotifyManualInput() { m_SpinPauseRemaining = 2.0f; }
 
@@ -32,6 +35,10 @@ namespace Cheat::Core {
         bool GetProjectedUVBounds(float& u0, float& v0, float& u1, float& v1) const;
 
         bool GetProjectedPartBoxes(std::vector<std::array<std::pair<float, float>, 8>>& out) const;
+        bool GetProjectedAimPartBoxes(
+            std::vector<std::pair<int, std::array<std::pair<float, float>, 8>>>& out) const;
+        bool GetProjectedAimPartCenters(
+            std::vector<std::pair<int, std::pair<float, float>>>& out) const;
         bool GetProjectedR6Skeleton(std::vector<float>& out_uv_segs) const;
 
         bool IsReady() const { return m_Ready && m_VB != nullptr && m_BodyVertCount > 0; }
@@ -42,7 +49,16 @@ namespace Cheat::Core {
         bool CreateShaders();
         bool ApplyLoadedModel(LoadedModel& model);
         void BuildR6SkeletonFromParts();
+        void BuildAimPartBoxes();
         float WingAlpha() const;
+
+        struct AimPartAABB {
+            float min[3]{};
+            float max[3]{};
+            bool  valid = false;
+        };
+        static constexpr int k_AimPartCount = 8;
+        AimPartAABB m_AimParts[k_AimPartCount]{};
 
         ID3D11Device*             m_Device = nullptr;
         ID3D11DeviceContext*      m_Ctx = nullptr;

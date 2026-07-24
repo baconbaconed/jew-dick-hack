@@ -25,6 +25,17 @@ namespace colors {
         Theme_Primordial,
         Theme_Nixware,
         Theme_Aimware,
+        Theme_Ember,
+        Theme_Blood,
+        Theme_Carbon,
+        Theme_Nord,
+        Theme_Matcha,
+        Theme_Paper,
+        Theme_Lavender,
+        Theme_Mint,
+        Theme_Sky,
+        Theme_Rose,
+        Theme_Sand,
         Theme_Custom,
         Theme_Count
     };

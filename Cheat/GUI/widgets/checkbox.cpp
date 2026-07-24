@@ -6,9 +6,9 @@
 #include <algorithm>
 
 namespace {
-    constexpr float k_box_size = 12.0f;
-    constexpr float k_label_spacing = 7.0f;
-    constexpr float k_box_offset_y = 6.0f;
+    constexpr float k_box_size = 14.0f;
+    constexpr float k_label_spacing = 8.0f;
+    constexpr float k_box_offset_y = 7.0f;
     constexpr int k_checked_gradient_rows = 8;
 
     ImU32 lerp_color(ImU32 from, ImU32 to, float t) {
@@ -78,10 +78,8 @@ namespace widgets {
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        ImFont* label_font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float label_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : 13.0f;
+        ImFont* label_font = fonts::ui();
+        const float label_font_size = fonts::ui_size(label_font);
 
         const ImVec2 label_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, text);
         const float total_w = text[0] != '\0'

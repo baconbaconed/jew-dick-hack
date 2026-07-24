@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
+#include <cstdint>
 
 namespace Cheat {
     namespace Features {
@@ -34,6 +35,7 @@ namespace Cheat {
             std::uint64_t s_pending     = 0;
             int           s_aim_part    = Settings::AIM_HEAD;
             Vector3       s_aim_point{};
+            std::uint32_t s_rng         = 0xA341316Cu;
 
             const Instance* part_instance(const PlayerCache& c, int part) {
                 switch (part) {
@@ -49,20 +51,57 @@ namespace Cheat {
                 }
             }
 
-            int current_part(const Config& cfg) {
-                int enabled[Settings::AIM_PART_COUNT];
-                int n = 0;
-                for (int i = 0; i < Settings::AIM_PART_COUNT; ++i)
-                    if (cfg.parts[i]) enabled[n++] = i;
-                if (n == 0) return Settings::AIM_HEAD;
+            std::uint32_t next_rng() {
+                s_rng ^= s_rng << 13;
+                s_rng ^= s_rng >> 17;
+                s_rng ^= s_rng << 5;
+                return s_rng;
+            }
+
+            int part_tier_of(const Config& cfg, int part) {
+                if (part < 0 || part >= Settings::AIM_PART_COUNT) return Settings::PART_OFF;
+                int t = cfg.part_tier[part];
+                if (t == Settings::PART_OFF && cfg.parts[part])
+                    t = Settings::PART_PRIMARY;
+                return t;
+            }
+
+            struct PartSample {
+                int     part = Settings::AIM_HEAD;
+                int     tier = Settings::PART_PRIMARY;
+                Vector3 world{};
+                Vector2 screen{};
+                float   dist = FLT_MAX;
+            };
+
+            int pick_among(const Config& cfg, PartSample* list, int n, bool allow_reroll) {
+                if (n <= 0) return -1;
+                if (n == 1) return 0;
+
+                if (cfg.part_select == Settings::PART_SELECT_CLOSEST) {
+                    int best = 0;
+                    for (int i = 1; i < n; ++i)
+                        if (list[i].dist < list[best].dist) best = i;
+                    return best;
+                }
 
                 const double now = ImGui::GetTime();
-                if (n > 1 && now - s_last_switch >= cfg.switch_time) {
-                    s_cycle = (s_cycle + 1) % n;
+                if (allow_reroll && now - s_last_switch >= (std::max)(0.05f, cfg.switch_time)) {
+                    if (cfg.part_select == Settings::PART_SELECT_RANDOM)
+                        s_cycle = (int)(next_rng() % (std::uint32_t)n);
+                    else
+                        s_cycle = (s_cycle + 1) % n;
                     s_last_switch = now;
                 }
-                if (s_cycle >= n) s_cycle = 0;
-                return enabled[s_cycle];
+                if (s_cycle < 0 || s_cycle >= n) s_cycle = 0;
+                return s_cycle;
+            }
+
+            bool hitchance_ok(const Config& cfg) {
+                if (!cfg.hitchance_enabled) return true;
+                const float chance = std::clamp(cfg.hitchance, 1.0f, 100.0f);
+                const float roll = (float)(next_rng() % 10000u) / 100.0f;
+                return roll <= chance;
             }
 
             ImVec2 overlay_size() {
@@ -75,6 +114,58 @@ namespace Cheat {
                     }
                 }
                 return ImGui::GetIO().DisplaySize;
+            }
+
+            bool game_client_screen_rect(RECT& out) {
+                HWND hwnd = Renderer::GetGameHwnd();
+                if (!hwnd || !IsWindow(hwnd))
+                    hwnd = Renderer::GetHwnd();
+                if (!hwnd || !IsWindow(hwnd))
+                    return false;
+
+                RECT cr{};
+                if (!GetClientRect(hwnd, &cr))
+                    return false;
+
+                POINT tl{ cr.left, cr.top };
+                POINT br{ cr.right, cr.bottom };
+                ClientToScreen(hwnd, &tl);
+                ClientToScreen(hwnd, &br);
+                if (br.x - tl.x < 8 || br.y - tl.y < 8)
+                    return false;
+
+                out.left = tl.x;
+                out.top = tl.y;
+                out.right = br.x;
+                out.bottom = br.y;
+                return true;
+            }
+
+            bool s_cursor_clipped = false;
+
+            void release_cursor_clip() {
+                if (!s_cursor_clipped)
+                    return;
+                ClipCursor(nullptr);
+                s_cursor_clipped = false;
+            }
+
+            void lock_cursor_to_game() {
+                RECT r{};
+                if (!game_client_screen_rect(r)) {
+                    release_cursor_clip();
+                    return;
+                }
+                ClipCursor(&r);
+                s_cursor_clipped = true;
+
+                POINT p{};
+                if (!GetCursorPos(&p))
+                    return;
+                const LONG x = std::clamp(p.x, r.left, r.right - 1);
+                const LONG y = std::clamp(p.y, r.top, r.bottom - 1);
+                if (x != p.x || y != p.y)
+                    SetCursorPos(x, y);
             }
 
             ImVec2 cursor_client() {
@@ -161,12 +252,18 @@ namespace Cheat {
                 Vector3       cam_pos{};
                 std::uint64_t local_player = 0;
                 std::uint64_t local_char   = 0;
+                std::uint64_t local_team_folder = 0;
             };
 
             bool is_local_entry(const PlayerCache& cache, const Scene& sc) {
                 if (sc.local_player && cache.address == sc.local_player) return true;
                 if (sc.local_char && cache.address == sc.local_char) return true;
                 return false;
+            }
+
+            bool is_teammate(const PlayerCache& cache, const Scene& sc) {
+                if (!g_Settings.misc.teamcheck) return false;
+                return PlayerHandler::IsTeammate(cache, sc.local_team_folder);
             }
 
             Scene resolve_scene() {
@@ -187,31 +284,92 @@ namespace Cheat {
                 if (g_Memory.IsValid(Globals::Players->address)) {
                     s.local_player = g_Memory.Read<std::uint64_t>(
                         Globals::Players->address + Offsets::Player::LocalPlayer);
-                    if (g_Memory.IsValid(s.local_player))
+                    if (g_Memory.IsValid(s.local_player)) {
                         s.local_char = g_Memory.Read<std::uint64_t>(
                             s.local_player + Offsets::Player::ModelInstance);
+                        if (g_Settings.misc.teamcheck)
+                            s.local_team_folder = PlayerHandler::ResolveTeamFolder(s.local_char);
+                    }
                 }
                 s.ok = true;
                 return s;
             }
 
+            bool collect_parts(const PlayerCache& cache, const Config& cfg, const Scene& sc,
+                               const Vector2& anchor_v, PartSample* out, int& out_n) {
+                out_n = 0;
+                bool configured = false;
+                for (int i = 0; i < Settings::AIM_PART_COUNT; ++i) {
+                    if (part_tier_of(cfg, i) != Settings::PART_OFF) {
+                        configured = true;
+                        break;
+                    }
+                }
+
+                for (int part = 0; part < Settings::AIM_PART_COUNT; ++part) {
+                    int tier = part_tier_of(cfg, part);
+                    if (!configured)
+                        tier = (part == Settings::AIM_HEAD) ? Settings::PART_PRIMARY : Settings::PART_OFF;
+                    if (tier == Settings::PART_OFF) continue;
+
+                    const Instance* p = part_instance(cache, part);
+                    if (!p || !g_Memory.IsValid(p->address)) continue;
+
+                    BasePart bp(p->address);
+                    const Vector3 world = bp.GetPosition();
+                    if (cfg.distance_check) {
+                        if ((world - sc.cam_pos).Length() > cfg.max_distance) continue;
+                    }
+
+                    Vector2 screen{};
+                    if (!world_to_screen(sc.view, sc.viewport, world, screen)) continue;
+
+                    const float dx = screen.x - anchor_v.x;
+                    const float dy = screen.y - anchor_v.y;
+                    PartSample& s = out[out_n++];
+                    s.part = part;
+                    s.tier = tier;
+                    s.world = world;
+                    s.screen = screen;
+                    s.dist = std::sqrt(dx * dx + dy * dy);
+                }
+                return out_n > 0;
+            }
+
+            bool choose_part(const Config& cfg, PartSample* samples, int n,
+                             bool allow_reroll, PartSample& out) {
+                if (n <= 0) return false;
+
+                int best_tier = 99;
+                for (int i = 0; i < n; ++i)
+                    if (samples[i].tier > 0 && samples[i].tier < best_tier)
+                        best_tier = samples[i].tier;
+
+                PartSample tiered[Settings::AIM_PART_COUNT];
+                int tn = 0;
+                for (int i = 0; i < n; ++i)
+                    if (samples[i].tier == best_tier)
+                        tiered[tn++] = samples[i];
+
+                const int idx = pick_among(cfg, tiered, tn, allow_reroll);
+                if (idx < 0) return false;
+                out = tiered[idx];
+                return true;
+            }
+
             bool select_target(const Config& cfg, const Scene& sc,
                                Vector3& out_world, Vector2& out_screen) {
-                const int     part   = current_part(cfg);
                 const ImVec2  anchor = fov_anchor(cfg);
                 const Vector2 anchor_v(anchor.x, anchor.y);
                 const float   fov_r  = cfg.fov_enabled ? (std::max)(1.0f, cfg.fov_size) : 1e9f;
                 const float   sticky_r = fov_r * (std::max)(1.0f, cfg.sticky_fov_scale);
 
-                bool    found_sticky = false;
-                Vector3 sticky_world{};
-                Vector2 sticky_screen{};
-
+                bool          found_sticky = false;
+                PartSample    sticky_pick{};
                 bool          found_best = false;
                 float         best_dist  = FLT_MAX;
                 std::uint64_t best_addr  = 0;
-                Vector3       best_world{};
-                Vector2       best_screen{};
+                PartSample    best_pick{};
 
                 if (s_target && (s_target == sc.local_player || s_target == sc.local_char))
                     s_target = 0;
@@ -220,49 +378,44 @@ namespace Cheat {
 
                 PlayerHandler::ForEachPlayer([&](const PlayerCache& cache) {
                     if (is_local_entry(cache, sc)) return;
+                    if (is_teammate(cache, sc)) return;
 
-                    const Instance* p = part_instance(cache, part);
-                    if (!p || !g_Memory.IsValid(p->address)) return;
+                    PartSample samples[Settings::AIM_PART_COUNT];
+                    int sn = 0;
+                    if (!collect_parts(cache, cfg, sc, anchor_v, samples, sn)) return;
 
-                    BasePart      bp(p->address);
-                    const Vector3 world = bp.GetPosition();
-
-                    if (cfg.distance_check) {
-                        const float dist3 = (world - sc.cam_pos).Length();
-                        if (dist3 > cfg.max_distance) return;
-                    }
-
-                    Vector2 screen{};
-                    if (!world_to_screen(sc.view, sc.viewport, world, screen)) return;
-
-                    const float dx = screen.x - anchor_v.x;
-                    const float dy = screen.y - anchor_v.y;
-                    const float d  = std::sqrt(dx * dx + dy * dy);
+                    PartSample pick{};
+                    if (!choose_part(cfg, samples, sn, cache.address == s_target, pick))
+                        return;
 
                     if (cfg.sticky && s_target != 0 && cache.address == s_target &&
-                        d <= sticky_r) {
-                        found_sticky  = true;
-                        sticky_world  = world;
-                        sticky_screen = screen;
+                        pick.dist <= sticky_r) {
+                        found_sticky = true;
+                        sticky_pick = pick;
                     }
 
-                    if (d > fov_r) return;
-                    if (d < best_dist) {
-                        best_dist   = d;
-                        best_addr   = cache.address;
-                        best_world  = world;
-                        best_screen = screen;
-                        found_best  = true;
+                    if (pick.dist > fov_r) return;
+                    if (pick.dist < best_dist) {
+                        best_dist = pick.dist;
+                        best_addr = cache.address;
+                        best_pick = pick;
+                        found_best = true;
                     }
                 });
 
-                if (cfg.sticky && found_sticky) {
-                    out_world  = sticky_world;
-                    out_screen = sticky_screen;
-                    s_aim_part  = part;
-                    s_aim_point = sticky_world;
+                auto commit = [&](std::uint64_t addr, const PartSample& pick) -> bool {
+                    if (!hitchance_ok(cfg)) return false;
+                    s_target = addr;
+                    s_pending = 0;
+                    out_world = pick.world;
+                    out_screen = pick.screen;
+                    s_aim_part = pick.part;
+                    s_aim_point = pick.world;
                     return true;
-                }
+                };
+
+                if (cfg.sticky && found_sticky)
+                    return commit(s_target, sticky_pick);
 
                 if (!found_best) {
                     s_pending = 0;
@@ -270,15 +423,8 @@ namespace Cheat {
                     return false;
                 }
 
-                if (!cfg.sticky) {
-                    s_target   = best_addr;
-                    s_pending  = 0;
-                    out_world  = best_world;
-                    out_screen = best_screen;
-                    s_aim_part  = part;
-                    s_aim_point = best_world;
-                    return true;
-                }
+                if (!cfg.sticky)
+                    return commit(best_addr, best_pick);
 
                 const double now = ImGui::GetTime();
                 if (cfg.humanize && cfg.reaction_ms > 0.0f && best_addr != s_target) {
@@ -290,16 +436,12 @@ namespace Cheat {
                     if (now < s_engage_at) return false;
                 }
 
-                s_target   = best_addr;
-                s_pending  = 0;
-                out_world  = best_world;
-                out_screen = best_screen;
-                s_aim_part  = part;
-                s_aim_point = best_world;
-                return true;
+                return commit(best_addr, best_pick);
             }
 
             void apply_mouse(const Config& cfg, const Vector2& target_screen) {
+                lock_cursor_to_game();
+
                 const ImVec2 cur = fov_anchor(cfg);
 
                 const float sx = (std::max)(0.1f, cfg.smooth_x);
@@ -311,9 +453,25 @@ namespace Cheat {
                 dx = std::clamp(dx, -k_max_step, k_max_step);
                 dy = std::clamp(dy, -k_max_step, k_max_step);
 
-                const int idx = static_cast<int>(std::lround(dx));
-                const int idy = static_cast<int>(std::lround(dy));
+                int idx = static_cast<int>(std::lround(dx));
+                int idy = static_cast<int>(std::lround(dy));
                 if (idx == 0 && idy == 0) return;
+
+                POINT screen{};
+                RECT bounds{};
+                if (GetCursorPos(&screen) && game_client_screen_rect(bounds)) {
+                    constexpr LONG k_pad = 2;
+                    const LONG left = bounds.left + k_pad;
+                    const LONG top = bounds.top + k_pad;
+                    const LONG right = (std::max)(left, bounds.right - k_pad - 1);
+                    const LONG bottom = (std::max)(top, bounds.bottom - k_pad - 1);
+
+                    const LONG nx = std::clamp(screen.x + idx, left, right);
+                    const LONG ny = std::clamp(screen.y + idy, top, bottom);
+                    idx = static_cast<int>(nx - screen.x);
+                    idy = static_cast<int>(ny - screen.y);
+                    if (idx == 0 && idy == 0) return;
+                }
 
                 INPUT in{};
                 in.type = INPUT_MOUSE;
@@ -373,6 +531,7 @@ namespace Cheat {
                 s_was_pressed = false;
                 s_toggled = false;
                 RaycastSilent::SetActive(false);
+                release_cursor_clip();
                 return;
             }
 
@@ -390,6 +549,7 @@ namespace Cheat {
                 s_target = 0;
                 s_pending = 0;
                 RaycastSilent::SetActive(false);
+                release_cursor_clip();
                 return;
             }
 
@@ -397,6 +557,7 @@ namespace Cheat {
             if (!sc.ok) {
                 s_target = 0;
                 RaycastSilent::SetActive(false);
+                release_cursor_clip();
                 return;
             }
 
@@ -405,6 +566,7 @@ namespace Cheat {
             if (!select_target(cfg, sc, world, screen)) {
                 s_target = 0;
                 RaycastSilent::SetActive(false);
+                release_cursor_clip();
                 return;
             }
 
@@ -412,9 +574,11 @@ namespace Cheat {
                 RaycastSilent::SetActive(false);
                 apply_mouse(cfg, screen);
             } else if (g_Settings.aim.type == 1) {
+                release_cursor_clip();
                 RaycastSilent::SetActive(false);
                 apply_camera(cfg, sc, world);
             } else if (g_Settings.aim.silent_method == Settings::SILENT_RAYCAST) {
+                release_cursor_clip();
 
                 bool force_mb = false;
                 const int fk = g_Settings.aim.force_magic_key;
@@ -442,9 +606,10 @@ namespace Cheat {
                 else
                     RaycastSilent::SetActive(true, world, false);
             } else if (g_Settings.aim.silent_method == Settings::SILENT_MAGIC_BULLET) {
+                release_cursor_clip();
                 MagicBullet::SetActive(true, world);
             } else {
-
+                release_cursor_clip();
                 RaycastSilent::SetActive(false);
             }
         }

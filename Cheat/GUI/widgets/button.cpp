@@ -5,17 +5,17 @@
 #include "imgui/imgui_internal.h"
 
 namespace {
-    constexpr float k_button_height = 16.0f;
-    constexpr float k_text_pad_x = 10.0f;
-    constexpr float k_input_pad_x = 5.0f;
-    constexpr float k_input_pad_y = 2.0f;
+    constexpr float k_button_height = 20.0f;
+    constexpr float k_text_pad_x = 12.0f;
+    constexpr float k_input_pad_x = 6.0f;
+    constexpr float k_input_pad_y = 3.0f;
 
     ImFont* label_font() {
-        return fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
+        return fonts::ui();
     }
 
     float label_font_size() {
-        return fonts::tahoma && fonts::tahoma->LegacySize > 0.0f ? fonts::tahoma->LegacySize : 13.0f;
+        return fonts::ui_size();
     }
 
     void draw_framed_box(ImDrawList* draw_list, const ImVec2& min, const ImVec2& max) {

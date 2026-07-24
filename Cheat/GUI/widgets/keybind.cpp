@@ -7,19 +7,15 @@
 #include <cstdio>
 
 namespace {
-    constexpr float k_key_box_w = 58.0f;
-    constexpr float k_mode_box_w = 44.0f;
-    constexpr float k_key_box_h = 16.0f;
-    constexpr float k_box_gap = 4.0f;
-    constexpr float k_label_gap = 6.0f;
+    constexpr float k_key_box_w = 72.0f;
+    constexpr float k_mode_box_w = 56.0f;
+    constexpr float k_key_box_h = 20.0f;
+    constexpr float k_box_gap = 5.0f;
+    constexpr float k_label_gap = 8.0f;
 
-    constexpr float k_right_margin = 12.0f;
+    constexpr float k_right_margin = 14.0f;
 
     constexpr ImU32 k_outline = IM_COL32(0, 0, 0, 255);
-    constexpr ImU32 k_inline_border = IM_COL32(24, 24, 25, 255);
-    constexpr ImU32 k_fill = IM_COL32(18, 19, 19, 255);
-    constexpr ImU32 k_text_inactive = IM_COL32(100, 100, 100, 255);
-    constexpr ImU32 k_text_hover = IM_COL32(255, 255, 255, 255);
 
     const char* mode_name(int mode) {
         return mode == 1 ? "toggle" : "hold";
@@ -127,12 +123,12 @@ namespace {
             }
         }
 
-        draw_list->AddRectFilled(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), k_fill);
-        draw_list->AddRect(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), k_inline_border, 0.0f, 0, 1.0f);
+        draw_list->AddRectFilled(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), colors::widget_track_u32());
+        draw_list->AddRect(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), colors::widget_inline_u32(), 0.0f, 0, 1.0f);
         draw_list->AddRect(bb.Min, bb.Max, k_outline, 0.0f, 0, 1.0f);
 
-        ImFont* font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f ? fonts::tahoma->LegacySize : 13.0f;
+        ImFont* font = fonts::ui();
+        const float font_size = fonts::ui_size();
 
         char text_buf[32];
         if (*capturing) {
@@ -141,7 +137,7 @@ namespace {
             key_name(*key, text_buf, IM_ARRAYSIZE(text_buf));
         }
 
-        const ImU32 text_color = *capturing ? colors::accent_u32() : (hovered ? k_text_hover : k_text_inactive);
+        const ImU32 text_color = *capturing ? colors::accent_u32() : colors::label_u32(hovered ? 1.0f : 0.0f);
         const ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, text_buf);
         widgets::draw_outlined_text(
             draw_list,
@@ -182,12 +178,12 @@ namespace {
             *mode = (*mode + 1) % 2;
         }
 
-        draw_list->AddRectFilled(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), k_fill);
-        draw_list->AddRect(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), k_inline_border, 0.0f, 0, 1.0f);
+        draw_list->AddRectFilled(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), colors::widget_track_u32());
+        draw_list->AddRect(ImVec2(bb.Min.x + 1.0f, bb.Min.y + 1.0f), ImVec2(bb.Max.x - 1.0f, bb.Max.y - 1.0f), colors::widget_inline_u32(), 0.0f, 0, 1.0f);
         draw_list->AddRect(bb.Min, bb.Max, k_outline, 0.0f, 0, 1.0f);
 
-        ImFont* font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f ? fonts::tahoma->LegacySize : 13.0f;
+        ImFont* font = fonts::ui();
+        const float font_size = fonts::ui_size();
         const char* name = mode_name(*mode);
         const ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, name);
         widgets::draw_outlined_text(
@@ -195,7 +191,7 @@ namespace {
             font,
             font_size,
             ImVec2(ImFloor(bb.Min.x + (size.x - text_size.x) * 0.5f), ImFloor(bb.Min.y + (size.y - text_size.y) * 0.5f)),
-            hovered ? k_text_hover : k_text_inactive,
+            colors::label_u32(hovered ? 1.0f : 0.0f),
             name);
 
         return pressed;
@@ -214,8 +210,8 @@ namespace widgets {
         }
 
         const char* text = label != nullptr ? label : "";
-        ImFont* label_font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float label_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f ? fonts::tahoma->LegacySize : 13.0f;
+        ImFont* label_font = fonts::ui();
+        const float label_font_size = fonts::ui_size();
 
         if (text[0] != '\0') {
             const ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -226,7 +222,7 @@ namespace widgets {
                 label_font,
                 label_font_size,
                 ImVec2(ImFloor(pos.x), ImFloor(pos.y + (k_key_box_h - label_size.y) * 0.5f)),
-                k_text_hover,
+                colors::text_active_u32(),
                 text);
             ImGui::Dummy(ImVec2(label_size.x, k_key_box_h));
             ImGui::SameLine();

@@ -9,9 +9,9 @@
 
 namespace {
 
-    constexpr float k_color_size   = 12.0f;
-    constexpr float k_color_gap    = 4.0f;
-    constexpr float k_right_margin = 12.0f;
+    constexpr float k_color_size   = 14.0f;
+    constexpr float k_color_gap    = 5.0f;
+    constexpr float k_right_margin = 14.0f;
 
     constexpr float k_pad        = 6.0f;
     constexpr float k_gap        = 6.0f;
@@ -20,19 +20,7 @@ namespace {
     constexpr float k_row_h      = 16.0f;
     constexpr float k_border     = 2.0f;
 
-    constexpr ImU32 k_hdr[] = {
-        IM_COL32(28,29,28,255), IM_COL32(28,28,28,255),
-        IM_COL32(26,27,26,255), IM_COL32(26,27,26,255),
-        IM_COL32(27,27,26,255), IM_COL32(24,24,25,255),
-        IM_COL32(24,24,24,255), IM_COL32(24,24,24,255),
-        IM_COL32(22,22,23,255), IM_COL32(22,23,23,255),
-        IM_COL32(20,20,21,255), IM_COL32(20,20,21,255),
-        IM_COL32(21,21,20,255), IM_COL32(18,18,19,255),
-        IM_COL32(18,19,19,255), IM_COL32(18,19,19,255),
-        IM_COL32(16,17,16,255), IM_COL32(17,17,16,255),
-        IM_COL32(15,14,14,255),
-    };
-    constexpr int k_hdr_rows = IM_ARRAYSIZE(k_hdr);
+    constexpr int k_hdr_rows = 22;
 
     constexpr float k_inner_w  = k_sv_size + k_gap + k_bar_thick;
     constexpr float k_popup_w  = k_border * 2.0f + k_pad * 2.0f + k_inner_w;
@@ -54,8 +42,8 @@ namespace {
 
     void draw_checkerboard(ImDrawList* dl, const ImRect& r, float cell = 4.0f)
     {
-        const ImU32 c0 = IM_COL32(52, 52, 54, 255);
-        const ImU32 c1 = IM_COL32(28, 28, 30, 255);
+        const ImU32 c0 = ImGui::ColorConvertFloat4ToU32(ImLerp(colors::child_fill, colors::text_inactive, 0.35f));
+        const ImU32 c1 = colors::widget_track_u32();
         dl->AddRectFilled(r.Min, r.Max, c0);
         int row = 0;
         for (float y = r.Min.y; y < r.Max.y; y += cell, ++row) {
@@ -111,15 +99,15 @@ namespace {
         for (int i = 0; i < k_hdr_rows; ++i)
             dl->AddRectFilled(ImVec2((float)fl, (float)(ft + i)),
                               ImVec2((float)(fr + 1), (float)(ft + i + 1)),
-                              k_hdr[i]);
+                              colors::header_gradient_row(i, k_hdr_rows));
 
         dl->AddRectFilled(ImVec2((float)fl, (float)(ft + k_hdr_rows)),
                           ImVec2((float)(fr + 1), (float)(ft + k_hdr_rows + 1)),
                           colors::widget_inline_u32());
 
-        const ImU32 outline = colors::widget_outline_u32();
+        constexpr ImU32 k_outline = IM_COL32(0, 0, 0, 255);
         dl->AddRect(ImVec2((float)ol, (float)ot),
-                    ImVec2((float)(orr + 1), (float)(ob + 1)), outline, 0.0f, 0, 1.0f);
+                    ImVec2((float)(orr + 1), (float)(ob + 1)), k_outline, 0.0f, 0, 1.0f);
 
         const ImU32 inl = colors::widget_inline_u32();
         const int il = ol + 1, it = ot + 1, ir = orr - 1, ib = ob - 1;
@@ -128,14 +116,13 @@ namespace {
         dl->AddLine(ImVec2((float)ir, (float)it), ImVec2((float)ir, (float)ib), inl);
 
         if (title && title[0]) {
-            ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
-            const float fs = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize : 13.0f;
+            ImFont* font = fonts::ui();
+            const float fs = fonts::ui_size(font);
             const ImVec2 tsz = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, title);
             const ImVec2 tpos(ImFloor((float)fl + 6.0f),
                               ImFloor((float)ft + ((float)k_hdr_rows - tsz.y) * 0.5f));
             widgets::draw_outlined_text(dl, font, fs, tpos,
-                IM_COL32(255, 255, 255, 255), title);
+                colors::text_active_u32(), title);
         }
     }
 
@@ -342,9 +329,8 @@ namespace widgets {
                     ImGui::ColorConvertFloat4ToU32(ImVec4(col[0], col[1], col[2], col[3])));
                 frame3(dl, prev_outer);
 
-                ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
-                const float fs = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                    ? fonts::tahoma->LegacySize : 13.0f;
+                ImFont* font = fonts::ui();
+                const float fs = fonts::ui_size(font);
 
                 char hex[16];
                 snprintf(hex, sizeof(hex), "#%02X%02X%02X",

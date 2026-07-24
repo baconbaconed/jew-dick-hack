@@ -10,8 +10,6 @@ namespace {
     constexpr float k_segment_gap = 8.0f;
 
     constexpr ImU32 k_outline = IM_COL32(0, 0, 0, 255);
-    constexpr ImU32 k_text_muted = IM_COL32(100, 100, 100, 255);
-    constexpr ImU32 k_text_bright = IM_COL32(255, 255, 255, 255);
 
     ImU32 with_alpha(ImU32 color, float alpha) {
         ImVec4 value = ImGui::ColorConvertU32ToFloat4(color);
@@ -41,19 +39,14 @@ namespace widgets {
 
         ImDrawList* draw_list = ImGui::GetForegroundDrawList();
 
-        ImFont* brand_font = fonts::tahoma_bold != nullptr ? fonts::tahoma_bold
-                                                          : (fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont());
-        ImFont* meta_font = fonts::tahoma != nullptr ? fonts::tahoma : brand_font;
-        const float brand_font_size = fonts::tahoma_bold && fonts::tahoma_bold->LegacySize > 0.0f
-            ? fonts::tahoma_bold->LegacySize
-            : 13.0f;
-        const float meta_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : brand_font_size;
+        ImFont* brand_font = fonts::ui_bold();
+        ImFont* meta_font = fonts::ui();
+        const float brand_font_size = fonts::ui_size(brand_font);
+        const float meta_font_size = fonts::ui_size(meta_font);
 
         const widgets::text_span brand_spans[] = {
             {"jew",    with_alpha(colors::accent_u32(), alpha)},
-            {"sploit", with_alpha(k_text_bright, alpha)},
+            {"sploit", with_alpha(colors::text_active_u32(), alpha)},
         };
 
         char build_buf[64];
@@ -92,7 +85,9 @@ namespace widgets {
 
         const float phase = static_cast<float>(ImGui::GetTime()) * 2.4f;
         const float wavelength = 70.0f;
-        const ImU32 highlight = with_alpha(IM_COL32(210, 225, 255, 255), alpha);
+        const ImU32 highlight = with_alpha(
+            ImGui::ColorConvertFloat4ToU32(ImLerp(colors::text_active, colors::accent, 0.35f)),
+            alpha);
 
         widgets::draw_outlined_text_spans_shimmer(
             draw_list,
@@ -111,7 +106,7 @@ namespace widgets {
             meta_font,
             meta_font_size,
             ImVec2(ImFloor(cursor_x), meta_text_y),
-            with_alpha(k_text_muted, alpha),
+            with_alpha(colors::text_inactive_u32(), alpha),
             build_buf);
     }
 }

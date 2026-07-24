@@ -1,54 +1,48 @@
 #include "fonts.h"
 #include "imgui/misc/imgui_freetype.h"
-#include "font_tahoma.h"
 #include "font_tahoma_bold.h"
 
 namespace fonts {
+    ImFont* imgui = nullptr;
     ImFont* tahoma_bold = nullptr;
     ImFont* tahoma = nullptr;
     ImFont* esp = nullptr;
     ImFont* esp_bold = nullptr;
 
     void load(ImGuiIO& io) {
+        io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
+        io.Fonts->FontLoaderFlags = 0;
+
         const unsigned int mono_flags =
             ImGuiFreeTypeLoaderFlags_MonoHinting |
             ImGuiFreeTypeLoaderFlags_Monochrome;
 
-        io.Fonts->SetFontLoader(ImGuiFreeType::GetFontLoader());
-        io.Fonts->FontLoaderFlags = 0;
+        ImFontConfig mono{};
+        mono.PixelSnapH = true;
+        mono.OversampleH = 1;
+        mono.OversampleV = 1;
+        mono.RasterizerMultiply = 1.0f;
+        mono.FontLoaderFlags = mono_flags;
+        mono.SizePixels = 13.0f;
+        imgui = io.Fonts->AddFontDefault(&mono);
 
-        ImFontConfig cfg{};
-        cfg.PixelSnapH = true;
-        cfg.OversampleH = 1;
-        cfg.OversampleV = 1;
-        cfg.RasterizerMultiply = 1.0f;
-        cfg.FontLoaderFlags = mono_flags;
-        cfg.FontDataOwnedByAtlas = false;
-
-        tahoma = io.Fonts->AddFontFromMemoryTTF(Tahoma, sizeof(Tahoma), 13.0f, &cfg);
-
-        ImFontConfig bold_cfg = cfg;
-        bold_cfg.FontLoaderFlags =
-            mono_flags | ImGuiFreeTypeLoaderFlags_ForceAutoHint;
-        bold_cfg.RasterizerMultiply = 0.88f;
+        ImFontConfig bold{};
+        bold.PixelSnapH = true;
+        bold.OversampleH = 2;
+        bold.OversampleV = 1;
+        bold.RasterizerMultiply = 1.0f;
+        bold.FontDataOwnedByAtlas = false;
+        bold.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
+        bold.SizePixels = 13.0f;
         tahoma_bold = io.Fonts->AddFontFromMemoryTTF(
-            TahomaBold, sizeof(TahomaBold), 13.0f, &bold_cfg);
+            TahomaBold, sizeof(TahomaBold), 13.0f, &bold);
 
-        esp      = tahoma;
-        esp_bold = tahoma_bold;
+        tahoma = imgui;
+        esp = imgui;
+        esp_bold = tahoma_bold ? tahoma_bold : imgui;
 
-        if (tahoma) {
-            io.FontDefault = tahoma;
-            return;
-        }
-
-        if (tahoma_bold) {
-            io.FontDefault = tahoma_bold;
-            return;
-        }
-
-        ImFontConfig fallback = cfg;
-        fallback.SizePixels = 12.0f;
-        io.FontDefault = io.Fonts->AddFontDefault(&fallback);
+        io.FontDefault = imgui ? imgui : tahoma_bold;
+        if (!io.FontDefault)
+            io.FontDefault = io.Fonts->AddFontDefault();
     }
 }

@@ -71,29 +71,7 @@ namespace {
         paint_hline(draw_list, inner_l, inner_r, inner_b, color);
     }
 
-    constexpr ImU32 k_child_gradient[] = {
-        IM_COL32(28, 29, 28, 255),
-        IM_COL32(28, 28, 28, 255),
-        IM_COL32(26, 27, 26, 255),
-        IM_COL32(26, 27, 26, 255),
-        IM_COL32(27, 27, 26, 255),
-        IM_COL32(24, 24, 25, 255),
-        IM_COL32(24, 24, 24, 255),
-        IM_COL32(24, 24, 24, 255),
-        IM_COL32(22, 22, 23, 255),
-        IM_COL32(22, 23, 23, 255),
-        IM_COL32(20, 20, 21, 255),
-        IM_COL32(20, 20, 21, 255),
-        IM_COL32(21, 21, 20, 255),
-        IM_COL32(18, 18, 19, 255),
-        IM_COL32(18, 19, 19, 255),
-        IM_COL32(18, 19, 19, 255),
-        IM_COL32(16, 17, 16, 255),
-        IM_COL32(17, 17, 16, 255),
-        IM_COL32(15, 14, 14, 255),
-    };
-
-    constexpr int k_child_gradient_rows = IM_ARRAYSIZE(k_child_gradient);
+    constexpr int k_child_gradient_rows = 22;
 
     bool has_child_title(const char* title) {
         return title != nullptr && title[0] != '\0';
@@ -112,7 +90,7 @@ namespace {
             draw_list->AddRectFilled(
                 ImVec2(static_cast<float>(fill_l), static_cast<float>(fill_t + i)),
                 ImVec2(static_cast<float>(fill_r + 1), static_cast<float>(fill_t + i + 1)),
-                k_child_gradient[i]);
+                colors::header_gradient_row(i, k_child_gradient_rows));
         }
     }
 
@@ -181,7 +159,7 @@ namespace {
             title_font,
             title_font_size,
             text_pos,
-            IM_COL32(255, 255, 255, 255),
+            colors::text_active_u32(),
             title);
     }
 
@@ -230,8 +208,8 @@ namespace widgets {
         const child_layout layout = make_child_layout(origin, size);
 
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        const ImU32 outer_col = ImGui::GetColorU32(outer_border ? *outer_border : colors::outer_border);
-        const ImU32 inner_col = ImGui::GetColorU32(inner_border ? *inner_border : colors::inner_border);
+        const ImU32 outer_col = ImGui::GetColorU32(outer_border ? *outer_border : colors::content_outer_border);
+        const ImU32 inner_col = ImGui::GetColorU32(inner_border ? *inner_border : colors::content_inner_border);
         const ImU32 fill_col = ImGui::GetColorU32(fill ? *fill : colors::child_fill);
 
         draw_child_frame(

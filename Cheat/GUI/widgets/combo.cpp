@@ -5,9 +5,9 @@
 #include <cstdio>
 
 namespace {
-    constexpr float k_combo_width_default = 161.0f;
-    constexpr float k_combo_width_min = 80.0f;
-    constexpr float k_widget_side_pad = 6.0f;
+    constexpr float k_combo_width_default = 200.0f;
+    constexpr float k_combo_width_min = 100.0f;
+    constexpr float k_widget_side_pad = 8.0f;
 
     float combo_width() {
         const float avail = ImGui::GetContentRegionAvail().x;
@@ -16,18 +16,14 @@ namespace {
         }
         return ImMax(k_combo_width_min, avail - k_widget_side_pad);
     }
-    constexpr float k_combo_height = 16.0f;
-    constexpr float k_label_combo_gap = 3.0f;
+    constexpr float k_combo_height = 20.0f;
+    constexpr float k_label_combo_gap = 4.0f;
     constexpr float k_label_text_offset_x = 1.0f;
-    constexpr float k_item_height = 16.0f;
-    constexpr float k_text_pad_x = 5.0f;
-    constexpr float k_selected_marker_gap = 2.0f;
+    constexpr float k_item_height = 20.0f;
+    constexpr float k_text_pad_x = 6.0f;
+    constexpr float k_selected_marker_gap = 3.0f;
 
     constexpr ImU32 k_outline = IM_COL32(0, 0, 0, 255);
-    constexpr ImU32 k_inline_border = IM_COL32(24, 24, 25, 255);
-    constexpr ImU32 k_fill = IM_COL32(18, 19, 19, 255);
-    constexpr ImU32 k_text_inactive = IM_COL32(100, 100, 100, 255);
-    constexpr ImU32 k_text_hover = IM_COL32(255, 255, 255, 255);
 
     void draw_framed_box(ImDrawList* draw_list, const ImVec2& min, const ImVec2& max) {
         const ImRect outer_rect(min, max);
@@ -38,8 +34,8 @@ namespace {
             ImVec2(inner_rect.Min.x + 1.0f, inner_rect.Min.y + 1.0f),
             ImVec2(inner_rect.Max.x - 1.0f, inner_rect.Max.y - 1.0f));
 
-        draw_list->AddRectFilled(fill_rect.Min, fill_rect.Max, k_fill);
-        draw_list->AddRect(inner_rect.Min, inner_rect.Max, k_inline_border, 0.0f, 0, 1.0f);
+        draw_list->AddRectFilled(fill_rect.Min, fill_rect.Max, colors::widget_track_u32());
+        draw_list->AddRect(inner_rect.Min, inner_rect.Max, colors::widget_inline_u32(), 0.0f, 0, 1.0f);
         draw_list->AddRect(outer_rect.Min, outer_rect.Max, k_outline, 0.0f, 0, 1.0f);
     }
 }
@@ -69,10 +65,8 @@ namespace widgets {
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        ImFont* label_font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float label_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : 13.0f;
+        ImFont* label_font = fonts::ui();
+        const float label_font_size = fonts::ui_size(label_font);
 
         const ImVec2 label_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, text);
         const float row_h = label_size.y;
@@ -103,10 +97,7 @@ namespace widgets {
         float* anim_hover = window->StateStorage.GetFloatRef(id, 0.0f);
         *anim_hover = ImLerp(*anim_hover, (hovered || ImGui::IsPopupOpen(popup_id)) ? 1.0f : 0.0f, 15.0f * g.IO.DeltaTime);
 
-        const ImU32 label_color = ImGui::ColorConvertFloat4ToU32(ImLerp(
-            ImGui::ColorConvertU32ToFloat4(k_text_inactive),
-            ImGui::ColorConvertU32ToFloat4(k_text_hover),
-            *anim_hover));
+        const ImU32 label_color = colors::label_u32(*anim_hover);
 
         if (text[0] != '\0') {
             draw_outlined_text(
@@ -169,10 +160,13 @@ namespace widgets {
 
             draw_framed_box(popup_draw, popup_min, popup_max);
 
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0.07f, 0.07f, 0.07f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0.35f, 0.35f, 0.35f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0.45f, 0.45f, 0.45f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, colors::child_fill);
+            {
+                ImVec4 grab = ImLerp(colors::child_fill, colors::text_inactive, 0.45f);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, grab);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImLerp(grab, colors::accent, 0.35f));
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImLerp(grab, colors::accent, 0.55f));
+            }
             ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0f);
 
             ImGuiWindowFlags child_flags = ImGuiWindowFlags_NoBackground;
@@ -201,11 +195,11 @@ namespace widgets {
                 const ImVec2 item_min = ImGui::GetItemRectMin();
                 const bool item_hovered = ImGui::IsItemHovered();
                 const bool item_selected = (*current_item == i);
-                ImU32 item_color = k_text_inactive;
+                ImU32 item_color = colors::text_inactive_u32();
                 if (item_selected) {
                     item_color = colors::accent_u32();
                 } else if (item_hovered) {
-                    item_color = k_text_hover;
+                    item_color = colors::text_active_u32();
                 }
 
                 const ImVec2 item_text_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, item_text);
@@ -305,10 +299,8 @@ namespace widgets {
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        ImFont* label_font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float label_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : 13.0f;
+        ImFont* label_font = fonts::ui();
+        const float label_font_size = fonts::ui_size(label_font);
 
         const ImVec2 label_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, text);
         const float row_h = label_size.y;
@@ -339,10 +331,7 @@ namespace widgets {
         float* anim_hover = window->StateStorage.GetFloatRef(id, 0.0f);
         *anim_hover = ImLerp(*anim_hover, (hovered || ImGui::IsPopupOpen(popup_id)) ? 1.0f : 0.0f, 15.0f * g.IO.DeltaTime);
 
-        const ImU32 label_color = ImGui::ColorConvertFloat4ToU32(ImLerp(
-            ImGui::ColorConvertU32ToFloat4(k_text_inactive),
-            ImGui::ColorConvertU32ToFloat4(k_text_hover),
-            *anim_hover));
+        const ImU32 label_color = colors::label_u32(*anim_hover);
 
         if (text[0] != '\0') {
             draw_outlined_text(
@@ -426,11 +415,11 @@ namespace widgets {
 
                 const ImVec2 item_min = ImGui::GetItemRectMin();
                 const bool item_hovered = ImGui::IsItemHovered();
-                ImU32 item_color = k_text_inactive;
+                ImU32 item_color = colors::text_inactive_u32();
                 if (item_shown) {
                     item_color = colors::accent_u32();
                 } else if (item_hovered) {
-                    item_color = k_text_hover;
+                    item_color = colors::text_active_u32();
                 }
 
                 const ImVec2 item_text_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, item_text);

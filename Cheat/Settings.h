@@ -15,7 +15,7 @@ namespace Cheat {
 
             int  chams_mode{ 0 };
             int  chams_shader{ 0 };
-            bool preview{ false };
+            bool preview{ true };
 
             bool healthbar{ false };
             bool health_text{ false };
@@ -52,6 +52,19 @@ namespace Cheat {
             AIM_PART_COUNT
         };
 
+        enum AimPartTier {
+            PART_OFF = 0,
+            PART_PRIMARY = 1,
+            PART_SECONDARY = 2,
+            PART_TERTIARY = 3
+        };
+
+        enum AimPartSelect {
+            PART_SELECT_CYCLE = 0,
+            PART_SELECT_RANDOM = 1,
+            PART_SELECT_CLOSEST = 2
+        };
+
         struct AimbotConfig {
             bool  fov_enabled{ false };
             float fov_size{ 120.0f };
@@ -64,7 +77,12 @@ namespace Cheat {
 
             bool  parts[AIM_PART_COUNT]{ false, false, false, false,
                                          false, false, false, false };
+            int   part_tier[AIM_PART_COUNT]{ 0, 0, 0, 0, 0, 0, 0, 0 };
+            int   part_select{ PART_SELECT_CLOSEST };
             float switch_time{ 0.40f };
+
+            bool  hitchance_enabled{ false };
+            float hitchance{ 100.0f };
 
             float smooth_x{ 1.0f };
             float smooth_y{ 1.0f };
@@ -76,6 +94,20 @@ namespace Cheat {
 
             float fov_color[4]{ 0.20f, 0.478f, 0.906f, 0.86f };
             float fov_outline_color[4]{ 0.f, 0.f, 0.f, 0.78f };
+
+            void SyncPartsFromTiers() {
+                for (int i = 0; i < AIM_PART_COUNT; ++i)
+                    parts[i] = part_tier[i] != PART_OFF;
+            }
+
+            void SyncTiersFromParts() {
+                for (int i = 0; i < AIM_PART_COUNT; ++i) {
+                    if (parts[i] && part_tier[i] == PART_OFF)
+                        part_tier[i] = PART_PRIMARY;
+                    else if (!parts[i])
+                        part_tier[i] = PART_OFF;
+                }
+            }
         };
 
         enum SilentMethod {
@@ -177,6 +209,8 @@ namespace Cheat {
 
             bool  noclip{ false };
             bool  inf_jump{ false };
+
+            bool  teamcheck{ false };
         } misc;
 
         struct {

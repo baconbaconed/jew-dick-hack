@@ -374,8 +374,7 @@ void SaveBytecodeToFile(const Target& t)
 
 float PanelFontSize()
 {
-    return (fonts::tahoma && fonts::tahoma->LegacySize > 0.0f)
-        ? fonts::tahoma->LegacySize : 13.0f;
+    return fonts::ui_size();
 }
 
 void PushWindowChrome()
@@ -412,7 +411,7 @@ void TextLine(ImU32 color, const char* fmt, ...)
     std::vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
-    ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+    ImFont* font = fonts::ui();
     const float fs = PanelFontSize();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -452,7 +451,7 @@ void DrawRowVisuals(const Node& n, float indent, bool showArrow, bool open)
     if (srv) dl->AddImage((ImTextureID)(uintptr_t)srv, icoMin, icoMax);
     x += kIconSz + 4.0f;
 
-    ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+    ImFont* font = fonts::ui();
     const float fs = PanelFontSize();
     const char* label = n.name.empty() ? "?" : n.name.c_str();
     const ImVec2 tpos(ImFloor(x), ImFloor(p.y + (kRowH - fs) * 0.5f));
@@ -547,7 +546,7 @@ void DrawContextMenu()
                              win_min.y + ImGui::GetWindowHeight());
         DrawFramedBox(dl, win_min, win_max);
 
-        ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+        ImFont* font = fonts::ui();
         const float fs = PanelFontSize();
 
         widgets::draw_outlined_text(dl, font, fs,
@@ -647,7 +646,7 @@ void DrawDetailWindow(float window_alpha)
         if (widgets::begin_child_panel(
                 "detail_child",
                 ImVec2(sz.x - kMargin * 2.0f, sz.y - kMargin * 2.0f),
-                "properties", fonts::tahoma, PanelFontSize(),
+                "properties", fonts::ui_bold(), PanelFontSize(),
                 nullptr, nullptr, nullptr)) {
 
             ImGui::SetCursorPosX(6.0f);
@@ -813,7 +812,7 @@ void Explorer::Render(float alpha)
         if (widgets::begin_child_panel(
                 "explorer_child",
                 ImVec2(sz.x - kMargin * 2.0f, sz.y - kMargin * 2.0f),
-                "explorer", fonts::tahoma, PanelFontSize(),
+                "explorer", fonts::ui_bold(), PanelFontSize(),
                 nullptr, nullptr, nullptr)) {
 
             static char query[128] = "";
@@ -864,7 +863,7 @@ void Explorer::Render(float alpha)
                                                 rowStart.y + (kRowH - kIconSz) * 0.5f);
                             if (srv) dl->AddImage((ImTextureID)(uintptr_t)srv, icoMin,
                                 ImVec2(icoMin.x + kIconSz, icoMin.y + kIconSz));
-                            ImFont* font = fonts::tahoma ? fonts::tahoma : ImGui::GetFont();
+                            ImFont* font = fonts::ui();
                             const float fs = PanelFontSize();
                             widgets::draw_outlined_text(dl, font, fs,
                                 ImVec2(icoMin.x + kIconSz + 4.0f,

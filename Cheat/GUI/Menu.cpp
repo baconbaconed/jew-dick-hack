@@ -44,7 +44,17 @@ namespace {
     void theme_color_row(const char* label, float color[4], const char* id) {
         ImGui::SetCursorPosX(6.0f);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-        ImGui::TextUnformatted(label);
+
+        ImFont* font = fonts::ui();
+        const float fs = fonts::ui_size(font);
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const ImVec2 tsz = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, label);
+        widgets::draw_outlined_text(
+            ImGui::GetWindowDrawList(), font, fs,
+            ImVec2(ImFloor(pos.x), ImFloor(pos.y)),
+            colors::text_active_u32(), label);
+        ImGui::Dummy(ImVec2(tsz.x, tsz.y));
+
         const float row_y = widgets::color_picker_row_y();
         widgets::same_line_color_picker(row_y, 0, 1);
         if (widgets::color_edit4(id, color))
@@ -96,6 +106,7 @@ void Menu::Render()
     ImGui::NewFrame();
     {
         sync_gui_theme();
+        ImGui::PushFont(fonts::ui(), fonts::ui_size());
 
         if (Renderer::IsGameActive()) {
             Visuals::ESP::Render();
@@ -104,6 +115,8 @@ void Menu::Render()
         }
         DrawMenu();
         Features::Explorer::Render();
+
+        ImGui::PopFont();
     }
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -162,14 +175,12 @@ void Menu::DrawMenu()
         m_bMenuVisible = !m_bMenuVisible;
         animation_time = 0.0f;
         animation_open_direction = m_bMenuVisible;
+        Renderer::SetClickThrough(!m_bMenuVisible);
         if (m_bMenuVisible) {
             ClipCursor(nullptr);
+            if (GetCapture())
+                ReleaseCapture();
             while (ShowCursor(TRUE) < 0) {}
-            if (HWND overlay = Renderer::GetHwnd()) {
-                const LONG base =
-                    WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-                SetWindowLong(overlay, GWL_EXSTYLE, base);
-            }
         }
     }
     insert_previous = insert_pressed;
@@ -201,11 +212,11 @@ void Menu::DrawMenu()
         return;
     }
 
-    constexpr ImVec2 k_menu_size(560.0f, 460.0f);
+    constexpr ImVec2 k_menu_size(720.0f, 580.0f);
 
     ImGui::SetNextWindowPos(io.DisplaySize * 0.5f, ImGuiCond_Once, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(k_menu_size, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 340.0f), ImVec2(820.0f, 800.0f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(660.0f, 440.0f), ImVec2(1100.0f, 960.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -216,9 +227,9 @@ void Menu::DrawMenu()
         s_menu_size = ImGui::GetWindowSize();
 
         {
-            constexpr float kGrip = 5.0f;
-            constexpr float kMinW = 520.0f, kMaxW = 820.0f;
-            constexpr float kMinH = 340.0f, kMaxH = 800.0f;
+            constexpr float kGrip = 6.0f;
+            constexpr float kMinW = 660.0f, kMaxW = 1100.0f;
+            constexpr float kMinH = 440.0f, kMaxH = 960.0f;
             const ImVec2 sz = s_menu_size;
 
             ImGui::SetCursorPos(ImVec2(sz.x - kGrip, 0.0f));
@@ -252,18 +263,17 @@ void Menu::DrawMenu()
 
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         constexpr float k_border = 2.0f;
-        constexpr ImVec2 k_title_pad(10.0f, 10.0f);
+        constexpr ImVec2 k_title_pad(12.0f, 12.0f);
         const ImVec2 text_pos(
             window_pos.x + k_border + k_title_pad.x,
             window_pos.y + k_border + k_title_pad.y);
 
-        const ImU32 text_color = IM_COL32(255, 255, 255, 255);
+        const ImU32 text_color = colors::text_active_u32();
         const ImU32 accent_color = colors::accent_u32();
 
-        const ImU32 highlight_color = IM_COL32(210, 225, 255, 255);
-        const float font_size = fonts::tahoma_bold && fonts::tahoma_bold->LegacySize > 0.0f
-            ? fonts::tahoma_bold->LegacySize
-            : 12.0f;
+        const ImU32 highlight_color = ImGui::ColorConvertFloat4ToU32(
+            ImLerp(colors::text_active, colors::accent, 0.35f));
+        const float font_size = fonts::ui_size(fonts::ui_bold());
 
         const widgets::text_span title_spans[] = {
             {"jew", accent_color},
@@ -279,7 +289,7 @@ void Menu::DrawMenu()
 
         widgets::draw_outlined_text_spans_shimmer(
             draw_list,
-            fonts::tahoma_bold,
+            fonts::ui_bold(),
             font_size,
             title_pos,
             title_spans,
@@ -288,16 +298,16 @@ void Menu::DrawMenu()
             title_phase,
             title_wavelength);
 
-        constexpr float k_content_margin_x = 10.0f;
-        constexpr float k_content_top = 29.0f;
-        constexpr float k_content_margin_bottom = 10.0f;
-        constexpr float k_tab_width = 81.0f;
-        constexpr float k_tab_height = 18.0f;
-        constexpr float k_tab_spacing = 2.0f;
+        constexpr float k_content_margin_x = 12.0f;
+        constexpr float k_content_top = 36.0f;
+        constexpr float k_content_margin_bottom = 12.0f;
+        constexpr float k_tab_width = 100.0f;
+        constexpr float k_tab_height = 22.0f;
+        constexpr float k_tab_spacing = 3.0f;
         constexpr float k_panel_inset = 2.0f;
-        constexpr ImVec2 k_content_padding(6.0f, 6.0f);
-        constexpr float k_min_content_w = 280.0f;
-        constexpr float k_min_content_h = 240.0f;
+        constexpr ImVec2 k_content_padding(8.0f, 8.0f);
+        constexpr float k_min_content_w = 360.0f;
+        constexpr float k_min_content_h = 300.0f;
 
         const float content_w = ImMax(k_min_content_w, window_size.x - k_content_margin_x * 2.0f);
         const float content_h = ImMax(
@@ -317,9 +327,7 @@ void Menu::DrawMenu()
         const ImU32 panel_outer = ImGui::GetColorU32(colors::content_outer_border);
         const ImU32 panel_inner = ImGui::GetColorU32(colors::content_inner_border);
 
-        const float tab_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : 13.0f;
+        const float tab_font_size = fonts::ui_size(fonts::ui_bold());
 
         active_tab = widgets::draw_tab_bar(
             draw_list,
@@ -333,8 +341,8 @@ void Menu::DrawMenu()
             k_tab_width,
             k_tab_height,
             k_tab_spacing,
-            fonts::tahoma,
-            fonts::tahoma,
+            fonts::ui_bold(),
+            fonts::ui_bold(),
             tab_font_size,
             panel_fill,
             panel_outer,
@@ -355,10 +363,10 @@ void Menu::DrawMenu()
             false,
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
         {
-            constexpr float k_side_child_w_min = 120.0f;
-            constexpr float k_side_child_h_min = 160.0f;
-            constexpr float k_child_margin = 2.0f;
-            constexpr float k_side_child_gap = 6.0f;
+            constexpr float k_side_child_w_min = 150.0f;
+            constexpr float k_side_child_h_min = 200.0f;
+            constexpr float k_child_margin = 4.0f;
+            constexpr float k_side_child_gap = 8.0f;
 
             const ImVec2 content_avail = ImGui::GetContentRegionAvail();
             const float inner_w = content_avail.x - k_child_margin * 2.0f;
@@ -366,9 +374,7 @@ void Menu::DrawMenu()
                 k_side_child_h_min,
                 content_avail.y - k_child_margin * 2.0f);
 
-            const float side_title_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize
-                : 13.0f;
+            const float side_title_size = fonts::ui_size(fonts::ui_bold());
 
             auto make_side_child_size = [&](int columns) -> ImVec2 {
                 int cols = columns < 1 ? 1 : columns;
@@ -388,7 +394,7 @@ void Menu::DrawMenu()
                     id,
                     size,
                     title,
-                    fonts::tahoma,
+                    fonts::ui_bold(),
                     side_title_size,
                     nullptr,
                     nullptr,
@@ -480,7 +486,7 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                     {
-                        static const char* k_fonts[] = { "gui (thin)", "gui bold" };
+                        static const char* k_fonts[] = { "imgui", "tahoma bold" };
                         widgets::combo("font", &g_Settings.esp.font, k_fonts, 2);
                     }
 
@@ -517,9 +523,6 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::slider_float("max distance", &g_Settings.esp.max_distance, 50.0f, 5000.0f, "%.0f");
 
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("esp preview", &g_Settings.esp.preview);
                 }
                 widgets::end_child_panel();
             } else if (active_tab == 1) {
@@ -707,17 +710,25 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
                     {
-                        static const char* k_parts[] = {
-                            "head", "upper torso", "lower torso", "hrp",
-                            "left hand", "right hand", "left foot", "right foot"
-                        };
-                        widgets::multi_combo("body parts", cfg.parts, k_parts,
-                            Cheat::Settings::AIM_PART_COUNT);
+                        static const char* k_select[] = { "cycle", "random", "closest" };
+                        widgets::combo("part select", &cfg.part_select, k_select, 3);
+                    }
+
+                    if (cfg.part_select != Cheat::Settings::PART_SELECT_CLOSEST) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("switch time", &cfg.switch_time, 0.05f, 2.0f, "%.2fs");
                     }
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::slider_float("switch time", &cfg.switch_time, 0.05f, 2.0f, "%.2fs");
+                    widgets::checkbox("hitchance", &cfg.hitchance_enabled);
+
+                    if (cfg.hitchance_enabled) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("hit chance", &cfg.hitchance, 1.0f, 100.0f, "%.0f%%");
+                    }
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
@@ -803,6 +814,10 @@ void Menu::DrawMenu()
                 if (draw_side_child("misc_world", "world", misc_left_pos, misc_child_size)) {
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+                    widgets::checkbox("teamcheck", &g_Settings.misc.teamcheck);
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::checkbox("no shadow", &g_Settings.world.no_shadow);
 
                     ImGui::SetCursorPosX(6.0f);
@@ -909,22 +924,24 @@ void Menu::DrawMenu()
     constexpr float k_dock_gap = 6.0f;
     float dock_x = s_menu_pos.x + s_menu_size.x;
 
-    if (g_Settings.esp.preview && active_tab != 3 &&
+    g_Settings.esp.preview = true;
+    if ((active_tab == 0 || active_tab == 3) &&
         (m_bMenuVisible || animation_running || window_alpha > 0.0f))
     {
-        constexpr float k_preview_default_w = 300.0f;
+        constexpr float k_preview_default_w = 360.0f;
         const float preview_x = dock_x + k_dock_gap;
 
         ImGui::SetNextWindowPos(ImVec2(preview_x, s_menu_pos.y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(k_preview_default_w, s_menu_size.y), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(
-            ImVec2(200.0f, s_menu_size.y),
-            ImVec2(520.0f, s_menu_size.y));
+            ImVec2(260.0f, s_menu_size.y),
+            ImVec2(640.0f, s_menu_size.y));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
         {
+            ImVec4 grip = colors::child_fill; grip.w = 0.35f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGrip, grip);
             ImVec4 a = colors::accent; a.w = 0.7f;
             ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, a);
             a.w = 1.0f;
@@ -953,15 +970,14 @@ void Menu::DrawMenu()
             const float  child_w = win_sz.x - k_margin * 2.0f;
             const float  child_h = win_sz.y - k_margin * 2.0f;
 
-            const float title_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize : 13.0f;
+            const float title_font_size = fonts::ui_size(fonts::ui_bold());
 
             ImGui::SetCursorPos(ImVec2(k_margin, k_margin));
             if (widgets::begin_child_panel(
                     "esp_preview_child",
                     ImVec2(child_w, child_h),
                     "esp preview",
-                    fonts::tahoma,
+                    fonts::ui_bold(),
                     title_font_size,
                     nullptr, nullptr, nullptr))
             {
@@ -977,7 +993,7 @@ void Menu::DrawMenu()
     if (active_tab == 4 && g_Settings.misc.custom_support &&
         (m_bMenuVisible || animation_running || window_alpha > 0.0f))
     {
-        constexpr float k_cs_default_w = 280.0f;
+        constexpr float k_cs_default_w = 340.0f;
         const float cs_x = dock_x + k_dock_gap;
 
         ImGui::SetNextWindowPos(ImVec2(cs_x, s_menu_pos.y), ImGuiCond_Always);
@@ -988,8 +1004,9 @@ void Menu::DrawMenu()
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, window_alpha);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_ResizeGrip,        ImVec4(0.15f, 0.15f, 0.15f, 0.35f));
         {
+            ImVec4 grip = colors::child_fill; grip.w = 0.35f;
+            ImGui::PushStyleColor(ImGuiCol_ResizeGrip, grip);
             ImVec4 a = colors::accent; a.w = 0.7f;
             ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, a);
             a.w = 1.0f;
@@ -1015,13 +1032,12 @@ void Menu::DrawMenu()
             const ImVec2 win_sz  = ImGui::GetWindowSize();
             const float  child_w = win_sz.x - k_margin * 2.0f;
             const float  child_h = win_sz.y - k_margin * 2.0f;
-            const float  tf = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-                ? fonts::tahoma->LegacySize : 13.0f;
+            const float  tf = fonts::ui_size(fonts::ui_bold());
 
             ImGui::SetCursorPos(ImVec2(k_margin, k_margin));
             if (widgets::begin_child_panel(
                     "custom_child", ImVec2(child_w, child_h),
-                    "custom support", fonts::tahoma, tf, nullptr, nullptr, nullptr))
+                    "custom support", fonts::ui_bold(), tf, nullptr, nullptr, nullptr))
             {
                 static char s_label[64] = "";
                 ImGui::SetCursorPosX(6.0f);
@@ -1058,7 +1074,7 @@ void Menu::DrawMenu()
                         if (widgets::begin_child_panel(
                                 "cs_blk", ImVec2(blk_w, 270.0f),
                                 t.label[0] ? t.label : "target",
-                                fonts::tahoma, tf, nullptr, nullptr, nullptr))
+                                fonts::ui_bold(), tf, nullptr, nullptr, nullptr))
                         {
                             ImGui::SetCursorPosX(6.0f);
                             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
@@ -1093,7 +1109,7 @@ void Menu::DrawMenu()
                             const float vis_w = ImGui::GetContentRegionAvail().x - 6.0f;
                             if (widgets::begin_child_panel(
                                     "cs_vis", ImVec2(vis_w, 118.0f),
-                                    "visuals", fonts::tahoma, tf, nullptr, nullptr, nullptr))
+                                    "visuals", fonts::ui_bold(), tf, nullptr, nullptr, nullptr))
                             {
                                 ImGui::SetCursorPosX(6.0f);
                                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);

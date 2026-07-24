@@ -5,12 +5,13 @@
 #include "RaycastSilent.h"
 #include "../../Memory/Memory.h"
 #include "../../Roblox/Engine/Offsets/Offsets.h"
+#include "../../Console/Console.h"
+#include "../../../Settings.h"
 #include <Windows.h>
 #include <vector>
 #include <cstring>
 #include <chrono>
 #include <cstddef>
-#include <iostream>
 
 #ifndef CFG_CALL_TARGET_VALID
 #define CFG_CALL_TARGET_VALID 0x00000001
@@ -164,10 +165,7 @@ namespace Cheat {
                     };
 
                     auto proc = resolve();
-                    if (!proc) {
-                        std::cout << "[silent] CFG api missing (ok if cave already valid)\n";
-                        return false;
-                    }
+                    if (!proc) return false;
 
                     struct Info {
                         ULONG_PTR Offset;
@@ -182,8 +180,6 @@ namespace Cheat {
                         g_Memory.GetHandle(),
                         reinterpret_cast<void*>(t & ~(static_cast<std::uintptr_t>(pg()) - 1)),
                         pg(), 1, &info);
-                    std::cout << "[silent] CFG mark stub=0x" << std::hex << t
-                              << " ok=" << ok << " err=" << std::dec << GetLastError() << "\n";
                     return ok != 0;
                 }
 
@@ -443,11 +439,7 @@ namespace Cheat {
                         const std::uintptr_t cave =
                             find_cave_in_module(mod, need, min_off, ignore);
                         if (!cave) continue;
-                        char narrow[64]{};
-                        WideCharToMultiByte(CP_UTF8, 0, name, -1, narrow,
-                                            static_cast<int>(sizeof(narrow)), nullptr, nullptr);
-                        std::cout << "[silent] cave " << narrow << " @0x" << std::hex << cave
-                                  << " prot=0x" << query_protect(cave) << std::dec << "\n";
+                        (void)name;
                         return cave;
                     }
 
@@ -473,11 +465,8 @@ namespace Cheat {
                         for (std::size_t off = 0; off + need <= size; off += 0x10) {
                             const std::uintptr_t cand = base + off;
                             if (ignore && cand == ignore) continue;
-                            if (region_is_padding(cand, need)) {
-                                std::cout << "[silent] cave padding @0x" << std::hex << cand
-                                          << " prot=0x" << mbi.Protect << std::dec << "\n";
+                            if (region_is_padding(cand, need))
                                 return cand;
-                            }
                         }
 
                         if (!fallback_rwx && mbi.Type == MEM_PRIVATE &&
@@ -489,12 +478,7 @@ namespace Cheat {
                         }
                     }
 
-                    if (fallback_rwx) {
-                        std::cout << "[silent] cave fallback RWX @0x" << std::hex
-                                  << fallback_rwx << std::dec << "\n";
-                        return fallback_rwx;
-                    }
-                    return 0;
+                    return fallback_rwx;
                 }
 
                 std::uintptr_t alloc_exec_page() {
@@ -502,14 +486,20 @@ namespace Cheat {
                     if (!p) return 0;
 
                     const DWORD prot = query_protect(p);
-                    std::cout << "[silent] VirtualAllocEx stub=0x" << std::hex << p
-                              << " protect=0x" << prot << std::dec << "\n";
                     if (!is_executable_protect(prot)) {
-                        std::cout << "[silent] Hyperion stripped NX from remote alloc — unusable\n";
                         g_Memory.Free(p);
                         return 0;
                     }
                     return p;
+                }
+
+                void report_inject(bool ok, std::uintptr_t orig = 0, std::uintptr_t stub = 0,
+                                   const char* detail = nullptr) {
+                    const std::uintptr_t base = g_Memory.GetModuleBase(L"RobloxPlayerBeta.exe");
+                    const std::uintptr_t slot = base ? (base + desc_rva_z + bound_fn_offset) : 0;
+                    Console::Clear();
+                    Console::DumpWorld();
+                    Console::DumpSilent(ok, orig, stub, g_hook.state, slot, detail);
                 }
 
             }
@@ -532,19 +522,17 @@ namespace Cheat {
 
                 const std::uintptr_t slot = base + desc_rva_z + bound_fn_offset;
                 const std::uintptr_t fn   = g_Memory.Read<std::uintptr_t>(slot);
-                std::cout << "[silent] probe desc=0x" << std::hex << desc_rva_z
-                          << " handler=0x" << fn << " abi=" << std::dec << k_abi << "\n";
 
                 if (!ok_addr(fn)) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: bad handler\n";
+                    report_inject(false, 0, 0, "bad handler");
                     return false;
                 }
 
                 if (!g_hook.state) g_hook.state = g_Memory.Alloc(pg(), PAGE_READWRITE);
                 if (!g_hook.state) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: state alloc\n";
+                    report_inject(false, 0, 0, "state alloc");
                     return false;
                 }
 
@@ -556,8 +544,7 @@ namespace Cheat {
 
                 if (thunk.size() > k_stub_bytes) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: stub too large "
-                              << thunk.size() << " > " << k_stub_bytes << "\n";
+                    report_inject(false, 0, 0, "stub too large");
                     return false;
                 }
 
@@ -573,14 +560,9 @@ namespace Cheat {
                     DWORD old_prot = 0;
                     const bool prot_ok =
                         protect_remote(cand, thunk.size(), PAGE_EXECUTE_READWRITE, &old_prot);
-                    std::cout << "[silent] cave protect @0x" << std::hex << cand
-                              << " ok=" << prot_ok << " err=" << std::dec << GetLastError()
-                              << " old=0x" << std::hex << old_prot << std::dec << "\n";
 
                     SetLastError(0);
                     if (!write_protected(cand, thunk.data(), thunk.size())) {
-                        std::cout << "[silent] cave write fail @0x" << std::hex << cand
-                                  << " err=" << std::dec << GetLastError() << "\n";
                         if (prot_ok)
                             protect_remote(cand, thunk.size(), old_prot, nullptr);
                         ignore_cave = cand;
@@ -597,8 +579,6 @@ namespace Cheat {
                     if (stub) {
                         SetLastError(0);
                         if (!write_protected(stub, thunk.data(), thunk.size())) {
-                            std::cout << "[silent] alloc write fail err="
-                                      << GetLastError() << "\n";
                             g_Memory.Free(stub);
                             stub = 0;
                             owned = false;
@@ -608,7 +588,7 @@ namespace Cheat {
 
                 if (!stub) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: no writable executable host\n";
+                    report_inject(false, 0, 0, "no host");
                     return false;
                 }
 
@@ -616,9 +596,8 @@ namespace Cheat {
                 SetLastError(0);
                 if (!w_mem(g_hook.state, &empty, sizeof(empty))) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: write state err="
-                              << GetLastError() << "\n";
                     if (owned) g_Memory.Free(stub);
+                    report_inject(false, 0, 0, "state write");
                     return false;
                 }
 
@@ -629,9 +608,8 @@ namespace Cheat {
                 const DWORD prot = query_protect(stub);
                 if (!is_executable_protect(prot)) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: stub page not executable prot=0x"
-                              << std::hex << prot << std::dec << "\n";
                     if (owned) g_Memory.Free(stub);
+                    report_inject(false, 0, 0, "stub not executable");
                     return false;
                 }
 
@@ -639,8 +617,8 @@ namespace Cheat {
                 if (!write_protected(slot, &stub, sizeof(stub)) ||
                     g_Memory.Read<std::uintptr_t>(slot) != stub) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: slot write/verify\n";
                     if (owned) g_Memory.Free(stub);
+                    report_inject(false, 0, 0, "slot write");
                     return false;
                 }
 
@@ -650,11 +628,7 @@ namespace Cheat {
                 g_hook.thunk_owned      = owned;
                 g_hook.installed        = true;
                 g_hook.active           = false;
-                std::cout << "[silent] installed  orig=0x" << std::hex << fn
-                          << " stub=0x" << stub
-                          << (k_jmp_only ? " mode=jmp-passthrough" : " mode=hook")
-                          << (owned ? " host=alloc" : " host=cave")
-                          << "\n" << std::dec;
+                report_inject(true, fn, stub);
                 return true;
             }
 
@@ -682,12 +656,26 @@ namespace Cheat {
             void Ensure(bool want) {
                 const std::uintptr_t base = g_Memory.GetModuleBase(L"RobloxPlayerBeta.exe");
                 static std::uintptr_t s_last_base = 0;
+                static int s_last_mode = -1;
+
+                const int mode = (g_Settings.aim.type == 2) ? g_Settings.aim.silent_method : -1;
+                const bool mode_changed = (s_last_mode != -1 && mode != s_last_mode);
+                s_last_mode = mode;
 
                 if (g_hook.installed && base && s_last_base && base != s_last_base) {
-                    std::cout << "[silent] module base changed, reinstalling hook\n";
                     Remove();
+                    Console::Clear();
+                    Console::DumpWorld();
+                    Console::Log(Console::Color::Orange, "Silent rescan  module");
                 }
                 if (base) s_last_base = base;
+
+                if (mode_changed && g_hook.installed) {
+                    Remove();
+                    Console::Clear();
+                    Console::DumpWorld();
+                    Console::Log(Console::Color::Orange, "Silent rescan  mode");
+                }
 
                 if (want) {
                     if (!base) return;
@@ -695,6 +683,9 @@ namespace Cheat {
                         Install();
                 } else if (g_hook.installed) {
                     Remove();
+                    Console::Clear();
+                    Console::DumpWorld();
+                    Console::Log(Console::Color::Yellow, "Silent removed");
                 }
             }
 

@@ -7,13 +7,13 @@
 #include <cstdio>
 
 namespace {
-    constexpr float k_slider_width_default = 161.0f;
-    constexpr float k_slider_width_min = 80.0f;
-    constexpr float k_widget_side_pad = 6.0f;
-    constexpr float k_slider_height = 16.0f;
-    constexpr float k_label_track_gap = 3.0f;
+    constexpr float k_slider_width_default = 200.0f;
+    constexpr float k_slider_width_min = 100.0f;
+    constexpr float k_widget_side_pad = 8.0f;
+    constexpr float k_slider_height = 20.0f;
+    constexpr float k_label_track_gap = 4.0f;
     constexpr float k_label_text_offset_x = 1.0f;
-    constexpr float k_value_track_pad = 4.0f;
+    constexpr float k_value_track_pad = 5.0f;
     constexpr int k_fill_gradient_count = 8;
 
     float slider_width() {
@@ -108,10 +108,8 @@ namespace {
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        ImFont* label_font = fonts::tahoma != nullptr ? fonts::tahoma : ImGui::GetFont();
-        const float label_font_size = fonts::tahoma && fonts::tahoma->LegacySize > 0.0f
-            ? fonts::tahoma->LegacySize
-            : 13.0f;
+        ImFont* label_font = fonts::ui();
+        const float label_font_size = fonts::ui_size(label_font);
 
         const ImVec2 label_size = label_font->CalcTextSizeA(label_font_size, FLT_MAX, 0.0f, text);
 
@@ -206,7 +204,7 @@ namespace {
             label_font,
             value_font_size,
             ImVec2(ImFloor(value_x), ImFloor(value_y)),
-            IM_COL32(255, 255, 255, 255),
+            colors::text_active_u32(),
             value_buf);
 
         return value_changed;

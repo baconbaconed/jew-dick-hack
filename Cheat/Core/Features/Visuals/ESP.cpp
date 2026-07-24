@@ -8,7 +8,6 @@
 #include "../../../Settings.h"
 #include "../../../Renderer/Renderer.h"
 #include "../../../GUI/resources/fonts/fonts.h"
-#include <iostream>
 #include <algorithm>
 #include <vector>
 #include <cmath>
@@ -284,9 +283,7 @@ void Cheat::Visuals::ESP::Render()
         }
     }
 
-    ImFont* esp_font = (Cheat::g_Settings.esp.font == 1)
-        ? (fonts::tahoma_bold ? fonts::tahoma_bold : fonts::tahoma)
-        : (fonts::tahoma ? fonts::tahoma : fonts::tahoma_bold);
+    ImFont* esp_font = fonts::selected();
     if (!esp_font) esp_font = ImGui::GetFont();
 
     const float esp_fs = fonts::snap_px(Cheat::g_Settings.esp.font_size);
@@ -303,11 +300,19 @@ void Cheat::Visuals::ESP::Render()
         local_player_addr = g_Memory.Read<std::uint64_t>(
             Cheat::Globals::Players->address + Offsets::Player::LocalPlayer);
 
+    const std::uint64_t local_team_folder =
+        Cheat::g_Settings.misc.teamcheck ? PlayerHandler::LocalTeamFolder() : 0;
+
     PlayerHandler::ForEachPlayer([&](const PlayerCache& cache)
     {
         if (!cache.humanoidRootPart || !cache.head) return;
 
         if (!Cheat::g_Settings.esp.draw_local && cache.address == local_player_addr)
+            return;
+
+        if (Cheat::g_Settings.misc.teamcheck &&
+            cache.address != local_player_addr &&
+            PlayerHandler::IsTeammate(cache, local_team_folder))
             return;
 
         BasePart root(cache.humanoidRootPart->address);

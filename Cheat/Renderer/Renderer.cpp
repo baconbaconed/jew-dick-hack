@@ -2,9 +2,9 @@
 #include "../GUI/Menu.h"
 #include "../Core/Graphics.h"
 #include "../Core/Memory/Memory.h"
+#include "../Core/Console/Console.h"
 #include <dwmapi.h>
 #include <windowsx.h>
-#include <iostream>
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -15,6 +15,9 @@ namespace Cheat {
         constexpr DWORD kOverlayExStyle =
             WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED |
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+
+        constexpr DWORD kOverlayInteractiveStyle =
+            WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
     }
 
     HWND Renderer::FindGameWindow()
@@ -82,9 +85,13 @@ namespace Cheat {
         }
 
         const HWND fg = GetForegroundWindow();
+        const bool menu_open = GUI::Menu::IsVisible();
+        const bool focused =
+            (fg == m_GameHwnd) ||
+            IsChild(m_GameHwnd, fg) ||
+            (menu_open && (fg == m_Hwnd || fg == nullptr));
 
-        const bool focused = (fg == m_GameHwnd) || IsChild(m_GameHwnd, fg);
-        if (!focused) {
+        if (!focused && !menu_open) {
             if (IsWindowVisible(m_Hwnd))
                 ShowWindow(m_Hwnd, SW_HIDE);
             return;
@@ -92,7 +99,8 @@ namespace Cheat {
 
         RECT cr{};
         if (!GetClientRect(m_GameHwnd, &cr)) {
-            ShowWindow(m_Hwnd, SW_HIDE);
+            if (!menu_open)
+                ShowWindow(m_Hwnd, SW_HIDE);
             return;
         }
 
@@ -104,7 +112,8 @@ namespace Cheat {
         const int w = br.x - tl.x;
         const int h = br.y - tl.y;
         if (w < 64 || h < 64) {
-            ShowWindow(m_Hwnd, SW_HIDE);
+            if (!menu_open)
+                ShowWindow(m_Hwnd, SW_HIDE);
             return;
         }
 
@@ -124,7 +133,7 @@ namespace Cheat {
             nullptr, nullptr, nullptr, nullptr, L"jewsploit.overlay", nullptr
         };
         if (!RegisterClassExW(&wc)) {
-            std::cout << "overlay failed (window class)\n";
+            Console::Log(Console::Color::Red, "overlay fail window class");
             return false;
         }
 
@@ -136,7 +145,7 @@ namespace Cheat {
             0, 0, 2, 2,
             nullptr, nullptr, wc.hInstance, nullptr);
         if (!m_Hwnd) {
-            std::cout << "overlay failed (window)\n";
+            Console::Log(Console::Color::Red, "overlay fail window");
             return false;
         }
 
@@ -146,7 +155,7 @@ namespace Cheat {
         DwmExtendFrameIntoClientArea(m_Hwnd, &margins);
 
         if (!CreateDevice()) {
-            std::cout << "overlay failed (dx11)\n";
+            Console::Log(Console::Color::Red, "overlay fail dx11");
             CleanupDevice();
             UnregisterClassW(wc.lpszClassName, wc.hInstance);
             return false;
@@ -158,13 +167,12 @@ namespace Cheat {
         Cheat::Core::g_DeviceContext = m_DeviceContext;
 
         if (!GUI::Menu::Initialize(m_Hwnd, m_Device, m_DeviceContext)) {
-            std::cout << "overlay failed (menu)\n";
+            Console::Log(Console::Color::Red, "overlay fail menu");
             CleanupDevice();
             UnregisterClassW(wc.lpszClassName, wc.hInstance);
             return false;
         }
 
-        std::cout << "overlay initialized\n";
         return true;
     }
 
@@ -193,16 +201,36 @@ namespace Cheat {
 
             GUI::Menu::Render();
 
-            const LONG base = WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
             if (GUI::Menu::IsVisible()) {
-                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base);
+                POINT pt{};
+                GetCursorPos(&pt);
+                ScreenToClient(m_Hwnd, &pt);
+                const bool over_ui = GUI::Menu::ShouldCaptureMouse((float)pt.x, (float)pt.y);
+                SetClickThrough(!over_ui);
                 ClipCursor(nullptr);
             } else {
-                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base | WS_EX_TRANSPARENT);
+                SetClickThrough(true);
             }
 
             m_SwapChain->Present(1, 0);
         }
+    }
+
+    void Renderer::SetClickThrough(bool click_through)
+    {
+        if (!m_Hwnd || !IsWindow(m_Hwnd)) return;
+
+        const LONG want = click_through
+            ? (LONG)kOverlayExStyle
+            : (LONG)kOverlayInteractiveStyle;
+        const LONG cur = GetWindowLong(m_Hwnd, GWL_EXSTYLE);
+        if (cur == want) return;
+
+        SetWindowLong(m_Hwnd, GWL_EXSTYLE, want);
+        SetWindowPos(
+            m_Hwnd, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
+            SWP_FRAMECHANGED | SWP_NOACTIVATE);
     }
 
     void Renderer::Shutdown() {

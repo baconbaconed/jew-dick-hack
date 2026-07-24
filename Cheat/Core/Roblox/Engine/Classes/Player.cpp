@@ -60,6 +60,16 @@ bool Cheat::Player::IsLocalPlayer() const
     return local_ptr == address;
 }
 
+std::uint64_t Cheat::Player::GetTeam() const
+{
+    if (!g_Memory.IsValid(address))
+        return 0;
+
+    const std::uint64_t team = g_Memory.Read<std::uint64_t>(
+        address + Offsets::Player::Team);
+    return g_Memory.IsValid(team) ? team : 0;
+}
+
 std::uint64_t Cheat::Player::GetCharacterAddress() const
 {
     if (!g_Memory.IsValid(address))

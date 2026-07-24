@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "PreviewRenderer.h"
 #include "../../Graphics.h"
+#include "../../../GUI/colors/colors.h"
 #include <stb_image.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
@@ -12,13 +13,11 @@
 
 using namespace DirectX;
 
-static constexpr float k_BG[4] = { 15.f / 255.f, 14.f / 255.f, 14.f / 255.f, 1.0f };
-
 static const char s_VS[] = R"(
 cbuffer CB : register(b0) {
     float4x4 g_MVP;
     float4x4 g_World;
-    float4   g_Opacity; // x = alpha
+    float4   g_Opacity;
 };
 struct VS_In {
     float3 pos : POSITION;
@@ -392,10 +391,68 @@ bool PreviewRenderer::ApplyLoadedModel(LoadedModel& model)
     m_BoxParts = std::move(model.box_parts);
 
     BuildR6SkeletonFromParts();
+    BuildAimPartBoxes();
 
     m_SceneDirty = true;
     m_CachedBoundsValid = false;
     return true;
+}
+
+void PreviewRenderer::BuildAimPartBoxes()
+{
+    for (int i = 0; i < k_AimPartCount; ++i)
+        m_AimParts[i] = {};
+
+    const float bx0 = m_BodyMin[0], bx1 = m_BodyMax[0];
+    const float by0 = m_BodyMin[1], by1 = m_BodyMax[1];
+    const float cx = (bx0 + bx1) * 0.5f;
+    const float h = (std::max)(0.01f, by1 - by0);
+    const float w = (std::max)(0.01f, bx1 - bx0);
+
+    const ModelPartAABB* head = nullptr;
+    const ModelPartAABB* torso = nullptr;
+    const ModelPartAABB* lArm = nullptr;
+    const ModelPartAABB* rArm = nullptr;
+    const ModelPartAABB* lLeg = nullptr;
+    const ModelPartAABB* rLeg = nullptr;
+
+    for (const auto& p : m_BodyParts) {
+        if (!p.valid) continue;
+        const float pcx = (p.min[0] + p.max[0]) * 0.5f;
+        const float pcy = (p.min[1] + p.max[1]) * 0.5f;
+        const float psy = p.max[1] - p.min[1];
+        const float psx = p.max[0] - p.min[0];
+
+        if (pcy > by0 + h * 0.82f && psy < h * 0.45f) {
+            head = &p;
+            continue;
+        }
+        if (pcy < by0 + h * 0.45f) {
+            if (pcx < cx) lLeg = &p; else rLeg = &p;
+            continue;
+        }
+        if (std::fabs(pcx - cx) > w * 0.28f && psx < w * 0.55f) {
+            if (pcx < cx) lArm = &p; else rArm = &p;
+            continue;
+        }
+        if (std::fabs(pcx - cx) <= w * 0.35f && psy >= h * 0.25f)
+            torso = &p;
+    }
+
+    auto copy = [](AimPartAABB& dst, const ModelPartAABB& src) {
+        for (int i = 0; i < 3; ++i) {
+            dst.min[i] = src.min[i];
+            dst.max[i] = src.max[i];
+        }
+        dst.valid = true;
+    };
+
+    if (head) copy(m_AimParts[0], *head);
+    if (torso) copy(m_AimParts[1], *torso);
+    if (lArm) copy(m_AimParts[4], *lArm);
+    if (rArm) copy(m_AimParts[5], *rArm);
+    if (lLeg) copy(m_AimParts[6], *lLeg);
+    if (rLeg) copy(m_AimParts[7], *rLeg);
 }
 
 bool PreviewRenderer::LoadModel(const std::string& obj_path)
@@ -556,7 +613,13 @@ void PreviewRenderer::Update(float dt)
     m_Ctx->RSGetViewports(&numVP, &prevVP);
 
     m_Ctx->OMSetRenderTargets(1, &m_RTV, m_DSV);
-    m_Ctx->ClearRenderTargetView(m_RTV, k_BG);
+    const float clear_bg[4] = {
+        colors::child_fill.x,
+        colors::child_fill.y,
+        colors::child_fill.z,
+        colors::child_fill.w
+    };
+    m_Ctx->ClearRenderTargetView(m_RTV, clear_bg);
     m_Ctx->ClearDepthStencilView(m_DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
     D3D11_VIEWPORT vp{};
@@ -685,6 +748,53 @@ bool PreviewRenderer::GetProjectedPartBoxes(
             box[i] = { u, v };
         }
         if (ok) out.push_back(box);
+    }
+    return !out.empty();
+}
+
+bool PreviewRenderer::GetProjectedAimPartBoxes(
+    std::vector<std::pair<int, std::array<std::pair<float, float>, 8>>>& out) const
+{
+    out.clear();
+    if (!m_LastMVPValid) return false;
+
+    const float* M = m_LastMVP;
+    out.reserve(k_AimPartCount);
+    for (int pi = 0; pi < k_AimPartCount; ++pi) {
+        const AimPartAABB& p = m_AimParts[pi];
+        if (!p.valid) continue;
+        std::array<std::pair<float, float>, 8> box{};
+        bool ok = true;
+        for (int i = 0; i < 8; ++i) {
+            const float x = (i & 4) ? p.max[0] : p.min[0];
+            const float y = (i & 2) ? p.max[1] : p.min[1];
+            const float z = (i & 1) ? p.max[2] : p.min[2];
+            float u, v;
+            if (!ProjectMVP(M, x, y, z, u, v)) { ok = false; break; }
+            box[i] = { u, v };
+        }
+        if (ok) out.emplace_back(pi, box);
+    }
+    return !out.empty();
+}
+
+bool PreviewRenderer::GetProjectedAimPartCenters(
+    std::vector<std::pair<int, std::pair<float, float>>>& out) const
+{
+    out.clear();
+    if (!m_LastMVPValid) return false;
+
+    const float* M = m_LastMVP;
+    out.reserve(k_AimPartCount);
+    for (int pi = 0; pi < k_AimPartCount; ++pi) {
+        const AimPartAABB& p = m_AimParts[pi];
+        if (!p.valid) continue;
+        const float x = (p.min[0] + p.max[0]) * 0.5f;
+        const float y = (p.min[1] + p.max[1]) * 0.5f;
+        const float z = (p.min[2] + p.max[2]) * 0.5f;
+        float u, v;
+        if (!ProjectMVP(M, x, y, z, u, v)) continue;
+        out.emplace_back(pi, std::make_pair(u, v));
     }
     return !out.empty();
 }

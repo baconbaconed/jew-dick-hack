@@ -70,6 +70,7 @@ namespace Cheat {
         float         GetMaxZoomDistance()   const;
         float         GetMinZoomDistance()   const;
         bool          IsLocalPlayer()        const;
+        std::uint64_t GetTeam()              const;
 
         std::uint64_t GetCharacterAddress()  const;
         std::shared_ptr<Instance> GetCharacter() const;

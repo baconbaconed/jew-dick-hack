@@ -14,6 +14,7 @@ namespace Cheat {
 
         static HWND GetHwnd() { return m_Hwnd; }
         static HWND GetGameHwnd() { return m_GameHwnd; }
+        static void SetClickThrough(bool click_through);
 
     private:
         static bool CreateDevice();

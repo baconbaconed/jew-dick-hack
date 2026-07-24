@@ -202,6 +202,7 @@
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Cheat\Renderer\Renderer.cpp" />
+    <ClCompile Include="Cheat\Core\Console\Console.cpp" />
     <ClCompile Include="Cheat\Core\Memory\Memory.cpp" />
     <ClCompile Include="Cheat\Core\PlayerHandler\PlayerHandler.cpp" />
     <ClCompile Include="Cheat\Core\Roblox\Engine\Classes\BasePart.cpp" />

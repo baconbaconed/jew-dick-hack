@@ -4,7 +4,7 @@
 #include "../Roblox/Engine/Offsets/Offsets.h"
 #include "../Memory/Memory.h"
 #include "../Globals/Globals.h"
-#include <iostream>
+#include "../Console/Console.h"
 #include <mutex>
 
 #undef GetClassName
@@ -110,6 +110,24 @@ bool IsLeafPartClass(const std::string& cls)
            cls == "Terrain";
 }
 
+bool CharacterOwnedByPlayer(std::uint64_t character_address)
+{
+    if (!g_Memory.IsValid(character_address))
+        return false;
+    if (!Cheat::Globals::Players || !g_Memory.IsValid(Cheat::Globals::Players->address))
+        return false;
+
+    for (const auto& player : Cheat::Globals::Players->GetChildren()) {
+        if (!g_Memory.IsValid(player.address))
+            continue;
+        const std::uint64_t model = g_Memory.Read<std::uint64_t>(
+            player.address + Offsets::Player::ModelInstance);
+        if (model == character_address)
+            return true;
+    }
+    return false;
+}
+
 void AddCharacter(const Cheat::Instance& model, Cheat::PlayerCache&& cache,
                   std::uint64_t localChar,
                   std::unordered_map<std::uint64_t, Cheat::PlayerCache>& target)
@@ -125,6 +143,10 @@ void AddCharacter(const Cheat::Instance& model, Cheat::PlayerCache&& cache,
     } else {
         cache.displayName = cache.name;
     }
+
+    cache.character = model.address;
+    cache.team_folder = Cheat::PlayerHandler::ResolveTeamFolder(model.address);
+    cache.is_player = CharacterOwnedByPlayer(model.address);
 
     target[model.address] = std::move(cache);
 }
@@ -224,14 +246,12 @@ std::uint64_t ResolveDataModel()
 
     static ULONGLONG s_last_diag = 0;
     const ULONGLONG now = GetTickCount64();
-    if (now - s_last_diag > 3000) {
+    if (now - s_last_diag > 5000) {
         s_last_diag = now;
-        const std::uint64_t dm1 = front
-            ? g_Memory.Read<std::uint64_t>(front + Offsets::FakeDataModel::RealDataModel) : 0;
-        std::cout << "[cache] waiting for datamodel... front=0x" << std::hex << front
-                  << " dm=0x" << dm1 << " ve=0x" << ve << std::dec
-                  << " cls='" << Cheat::Instance(dm1).GetClassName()
-                  << "' (stale offsets?)\n";
+        Cheat::Console::Clear();
+        Cheat::Console::Log(Cheat::Console::Color::Yellow, "waiting for datamodel");
+        Cheat::Console::Ptr(Cheat::Console::Color::Yellow, "Front DM", front);
+        Cheat::Console::Ptr(Cheat::Console::Color::Magenta, "Render View", ve);
     }
     return 0;
 }
@@ -241,27 +261,70 @@ void RefreshGlobals()
     const std::uint64_t dm = ResolveDataModel();
     if (!dm) return;
 
+    bool changed = false;
     if (dm != Cheat::Globals::InstanceDataModel.address) {
         Cheat::Globals::InstanceDataModel.address = dm;
         Cheat::Globals::Workspace = nullptr;
         Cheat::Globals::Players   = nullptr;
-        std::cout << "[cache] datamodel: 0x" << std::hex << dm << std::dec << "\n";
+        changed = true;
     }
 
     if (!Cheat::Globals::Workspace) {
         if (std::uint64_t ws = FindServiceByClass(Cheat::Globals::InstanceDataModel, "Workspace")) {
             Cheat::Globals::Workspace = std::make_shared<Cheat::Workspace>(ws);
-            std::cout << "[cache] workspace found\n";
+            changed = true;
         }
     }
     if (!Cheat::Globals::Players) {
         if (std::uint64_t pl = FindServiceByClass(Cheat::Globals::InstanceDataModel, "Players")) {
             Cheat::Globals::Players = std::make_shared<Cheat::Players>(pl);
-            std::cout << "[cache] players service found\n";
+            changed = true;
         }
+    }
+
+    if (changed && Cheat::Globals::Workspace && Cheat::Globals::Players) {
+        Cheat::Console::Clear();
+        Cheat::Console::DumpWorld();
     }
 }
 
+}
+
+std::uint64_t Cheat::PlayerHandler::ResolveTeamFolder(std::uint64_t character_address)
+{
+    if (!g_Memory.IsValid(character_address))
+        return 0;
+
+    auto parent = Instance(character_address).GetParent();
+    if (!parent || !g_Memory.IsValid(parent->address))
+        return 0;
+
+    if (Globals::Workspace && parent->address == Globals::Workspace->address)
+        return 0;
+
+    const std::string cls = parent->GetClassName();
+    if (cls == "Workspace" || cls == "Players" || cls == "DataModel" ||
+        cls == "Camera" || cls == "Terrain")
+        return 0;
+
+    if (cls != "Folder" && cls != "Model" && cls != "Configuration")
+        return 0;
+
+    return parent->address;
+}
+
+std::uint64_t Cheat::PlayerHandler::LocalTeamFolder()
+{
+    return ResolveTeamFolder(LocalCharacterAddress());
+}
+
+bool Cheat::PlayerHandler::IsTeammate(const PlayerCache& cache, std::uint64_t local_team_folder)
+{
+    if (!local_team_folder || !cache.team_folder)
+        return false;
+    if (!cache.is_player)
+        return false;
+    return cache.team_folder == local_team_folder;
 }
 
 void Cheat::PlayerHandler::UpdateCache(const Instance& player,
@@ -279,6 +342,10 @@ void Cheat::PlayerHandler::UpdateCache(const Instance& player,
     cache.displayName = Player(player.address).GetDisplayName();
     if (cache.displayName.empty() || cache.displayName == "Unknown")
         cache.displayName = cache.name;
+
+    cache.character = characterAddress;
+    cache.team_folder = ResolveTeamFolder(characterAddress);
+    cache.is_player = true;
 
     PopulateParts(characterAddress, cache);
 
@@ -323,26 +390,9 @@ void Cheat::PlayerHandler::CacheAllPlayers()
         if (cache.humanoidRootPart) { any_parts = true; break; }
     }
 
-    const std::size_t players_found = fresh.size();
-    bool used_fallback = false;
     if (!any_parts) {
         fresh.clear();
         CacheFromWorkspace(fresh);
-        used_fallback = true;
-    }
-
-    {
-        static std::size_t s_last_count = SIZE_MAX;
-        static bool        s_last_fallback = false;
-        if (fresh.size() != s_last_count || used_fallback != s_last_fallback) {
-            if (used_fallback)
-                std::cout << "[cache] players-service empty (" << players_found
-                          << ") -> workspace scan found " << fresh.size() << " characters\n";
-            else
-                std::cout << "[cache] players service: " << fresh.size() << " characters\n";
-            s_last_count = fresh.size();
-            s_last_fallback = used_fallback;
-        }
     }
 
     std::lock_guard<std::mutex> lock(cacheMutex);
