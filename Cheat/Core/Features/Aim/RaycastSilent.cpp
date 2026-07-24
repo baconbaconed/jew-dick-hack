@@ -75,16 +75,6 @@ namespace Cheat {
                     return p;
                 }
 
-                bool vprot(std::uintptr_t a, std::size_t s, DWORD prot) {
-                    if (!ok_addr(a) || !s || !g_Memory.GetHandle()) return false;
-                    const std::uintptr_t b = a & ~(static_cast<std::uintptr_t>(pg()) - 1);
-                    const std::size_t    n =
-                        static_cast<std::size_t>(((a + s + pg() - 1) & ~(pg() - 1)) - b);
-                    DWORD old = 0;
-                    return VirtualProtectEx(g_Memory.GetHandle(),
-                        reinterpret_cast<void*>(b), n, prot, &old) != 0;
-                }
-
                 DWORD query_protect(std::uintptr_t a) {
                     MEMORY_BASIC_INFORMATION mbi{};
                     if (!VirtualQueryEx(g_Memory.GetHandle(),
@@ -97,6 +87,64 @@ namespace Cheat {
                     const DWORD x = p & 0xFF;
                     return x == PAGE_EXECUTE || x == PAGE_EXECUTE_READ ||
                            x == PAGE_EXECUTE_READWRITE || x == PAGE_EXECUTE_WRITECOPY;
+                }
+
+                bool protect_remote(std::uintptr_t address, std::size_t size, DWORD protection,
+                                    DWORD* old_protect = nullptr) {
+                    if (!ok_addr(address) || !size || !g_Memory.GetHandle()) return false;
+
+                    const std::uintptr_t page_mask = ~(static_cast<std::uintptr_t>(pg()) - 1);
+                    const std::uintptr_t base = address & page_mask;
+                    const std::uintptr_t end  =
+                        (address + size + pg() - 1) & page_mask;
+                    const std::size_t    span = static_cast<std::size_t>(end - base);
+
+                    using NtProtectFn = LONG(WINAPI*)(HANDLE, PVOID*, PSIZE_T, ULONG, PULONG);
+                    static NtProtectFn nt_protect = []() -> NtProtectFn {
+                        HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+                        if (!ntdll) return nullptr;
+                        return reinterpret_cast<NtProtectFn>(
+                            GetProcAddress(ntdll, "NtProtectVirtualMemory"));
+                    }();
+
+                    auto try_one = [&](DWORD req) -> bool {
+                        DWORD old = 0;
+                        if (VirtualProtectEx(g_Memory.GetHandle(),
+                                reinterpret_cast<void*>(base), span, req, &old)) {
+                            if (old_protect) *old_protect = old;
+                            return true;
+                        }
+                        if (!nt_protect) return false;
+                        PVOID  nt_base = reinterpret_cast<void*>(base);
+                        SIZE_T nt_size = span;
+                        ULONG  nt_old  = 0;
+                        const LONG st = nt_protect(
+                            g_Memory.GetHandle(), &nt_base, &nt_size, req, &nt_old);
+                        if (st >= 0) {
+                            if (old_protect) *old_protect = static_cast<DWORD>(nt_old);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    if (try_one(protection)) return true;
+                    if (protection == PAGE_EXECUTE_READWRITE &&
+                        try_one(PAGE_EXECUTE_WRITECOPY))
+                        return true;
+                    if (protection == PAGE_READWRITE && try_one(PAGE_WRITECOPY))
+                        return true;
+                    return false;
+                }
+
+                bool write_protected(std::uintptr_t address, const void* data, std::size_t size) {
+                    if (!ok_addr(address) || !data || !size) return false;
+                    DWORD old = 0;
+                    const bool changed =
+                        protect_remote(address, size, PAGE_EXECUTE_READWRITE, &old);
+                    const bool wrote = w_mem(address, data, size);
+                    if (changed)
+                        protect_remote(address, size, old, nullptr);
+                    return wrote;
                 }
 
                 bool mark_cfg(std::uintptr_t t) {
@@ -290,15 +338,119 @@ namespace Cheat {
                 bool region_is_padding(std::uintptr_t a, std::size_t n) {
                     std::vector<std::uint8_t> buf(n);
                     if (g_Memory.ReadRaw(a, buf.data(), n) != n) return false;
-                    bool all_cc = true, all_00 = true;
                     for (auto b : buf) {
-                        if (b != 0xCC) all_cc = false;
-                        if (b != 0x00) all_00 = false;
+                        if (b != 0xCC && b != 0x00 && b != 0x90) return false;
                     }
-                    return all_cc || all_00;
+                    return true;
                 }
 
-                std::uintptr_t find_exec_cave(std::size_t need, std::uintptr_t module_base) {
+                bool read_val(std::uintptr_t a, void* d, std::size_t s) {
+                    return g_Memory.ReadRaw(a, d, s) == s;
+                }
+
+                std::uintptr_t find_cave_in_module(std::uintptr_t module_base, std::size_t need,
+                                                  std::uintptr_t min_offset,
+                                                  std::uintptr_t ignore) {
+                    if (!ok_addr(module_base) || !need) return 0;
+
+                    IMAGE_DOS_HEADER dos{};
+                    if (!read_val(module_base, &dos, sizeof(dos)) ||
+                        dos.e_magic != IMAGE_DOS_SIGNATURE)
+                        return 0;
+
+                    IMAGE_NT_HEADERS64 nt{};
+                    const std::uintptr_t nt_addr =
+                        module_base + static_cast<std::uintptr_t>(dos.e_lfanew);
+                    if (!read_val(nt_addr, &nt, sizeof(nt)) ||
+                        nt.Signature != IMAGE_NT_SIGNATURE)
+                        return 0;
+
+                    const std::uintptr_t section_base =
+                        nt_addr + offsetof(IMAGE_NT_HEADERS64, OptionalHeader) +
+                        nt.FileHeader.SizeOfOptionalHeader;
+
+                    for (WORD i = 0; i < nt.FileHeader.NumberOfSections; ++i) {
+                        IMAGE_SECTION_HEADER section{};
+                        if (!read_val(section_base +
+                                          static_cast<std::uintptr_t>(i) * sizeof(section),
+                                      &section, sizeof(section)))
+                            break;
+
+                        if ((section.Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0)
+                            continue;
+
+                        const std::uintptr_t section_off = section.VirtualAddress;
+                        std::size_t section_size = section.Misc.VirtualSize
+                            ? section.Misc.VirtualSize
+                            : section.SizeOfRawData;
+                        if (!section_off || section_size < need) continue;
+
+                        std::uintptr_t scan_off = section_off;
+                        if (scan_off < min_offset) scan_off = min_offset;
+                        if (scan_off >= section_off + section_size) continue;
+
+                        const std::uintptr_t scan_start = module_base + scan_off;
+                        const std::size_t scan_size = static_cast<std::size_t>(
+                            section_off + section_size - scan_off);
+
+                        std::vector<std::uint8_t> buf(scan_size);
+                        if (!read_val(scan_start, buf.data(), buf.size())) continue;
+
+                        std::size_t run_start = 0;
+                        std::size_t run_len = 0;
+                        for (std::size_t j = 0; j < buf.size(); ++j) {
+                            const std::uint8_t b = buf[j];
+                            if (b != 0x00 && b != 0xCC && b != 0x90) {
+                                run_len = 0;
+                                run_start = j + 1;
+                                continue;
+                            }
+                            ++run_len;
+                            if (run_len < need) continue;
+
+                            std::uintptr_t cand = scan_start + run_start;
+                            const std::uintptr_t aligned =
+                                (cand + 0x0F) & ~static_cast<std::uintptr_t>(0x0F);
+                            const std::size_t loss =
+                                static_cast<std::size_t>(aligned - cand);
+                            if (run_len < need + loss) continue;
+                            if (ignore && aligned == ignore) continue;
+                            if (g_hook.thunk && aligned == g_hook.thunk) continue;
+                            return aligned;
+                        }
+                    }
+                    return 0;
+                }
+
+                std::uintptr_t find_exec_cave(std::size_t need, std::uintptr_t,
+                                             std::uintptr_t ignore = 0) {
+                    static const wchar_t* k_pref[] = {
+                        L"winsta.dll",
+                        L"win32u.dll",
+                        L"uxtheme.dll",
+                        L"dwmapi.dll",
+                        L"msctf.dll",
+                        L"TextInputFramework.dll",
+                        L"CoreMessaging.dll",
+                        L"user32.dll",
+                    };
+
+                    for (std::size_t mi = 0; mi < sizeof(k_pref) / sizeof(k_pref[0]); ++mi) {
+                        const wchar_t* name = k_pref[mi];
+                        const std::uintptr_t mod = g_Memory.GetModuleBase(name);
+                        if (!mod) continue;
+                        const std::uintptr_t min_off = (mi == 0) ? 0x2000u : 0x1000u;
+                        const std::uintptr_t cave =
+                            find_cave_in_module(mod, need, min_off, ignore);
+                        if (!cave) continue;
+                        char narrow[64]{};
+                        WideCharToMultiByte(CP_UTF8, 0, name, -1, narrow,
+                                            static_cast<int>(sizeof(narrow)), nullptr, nullptr);
+                        std::cout << "[silent] cave " << narrow << " @0x" << std::hex << cave
+                                  << " prot=0x" << query_protect(cave) << std::dec << "\n";
+                        return cave;
+                    }
+
                     MEMORY_BASIC_INFORMATION mbi{};
                     std::uintptr_t addr = 0;
                     std::uintptr_t fallback_rwx = 0;
@@ -320,6 +472,7 @@ namespace Cheat {
 
                         for (std::size_t off = 0; off + need <= size; off += 0x10) {
                             const std::uintptr_t cand = base + off;
+                            if (ignore && cand == ignore) continue;
                             if (region_is_padding(cand, need)) {
                                 std::cout << "[silent] cave padding @0x" << std::hex << cand
                                           << " prot=0x" << mbi.Protect << std::dec << "\n";
@@ -330,7 +483,9 @@ namespace Cheat {
                         if (!fallback_rwx && mbi.Type == MEM_PRIVATE &&
                             (mbi.Protect & 0xFF) == PAGE_EXECUTE_READWRITE &&
                             size >= need + 0x40) {
-                            fallback_rwx = base + size - need;
+                            const std::uintptr_t cand = base + size - need;
+                            if (!ignore || cand != ignore)
+                                fallback_rwx = cand;
                         }
                     }
 
@@ -339,8 +494,6 @@ namespace Cheat {
                                   << fallback_rwx << std::dec << "\n";
                         return fallback_rwx;
                     }
-
-                    (void)module_base;
                     return 0;
                 }
 
@@ -409,37 +562,65 @@ namespace Cheat {
                 }
 
                 bool owned = false;
-                std::uintptr_t stub = find_exec_cave(k_stub_bytes, base);
-                if (stub) {
+                std::uintptr_t stub = 0;
+                std::uintptr_t ignore_cave = 0;
+
+                for (int attempt = 0; attempt < 8 && !stub; ++attempt) {
+                    std::uintptr_t cand = find_exec_cave(k_stub_bytes, base, ignore_cave);
+                    if (!cand) break;
+
+                    SetLastError(0);
+                    DWORD old_prot = 0;
+                    const bool prot_ok =
+                        protect_remote(cand, thunk.size(), PAGE_EXECUTE_READWRITE, &old_prot);
+                    std::cout << "[silent] cave protect @0x" << std::hex << cand
+                              << " ok=" << prot_ok << " err=" << std::dec << GetLastError()
+                              << " old=0x" << std::hex << old_prot << std::dec << "\n";
+
+                    SetLastError(0);
+                    if (!write_protected(cand, thunk.data(), thunk.size())) {
+                        std::cout << "[silent] cave write fail @0x" << std::hex << cand
+                                  << " err=" << std::dec << GetLastError() << "\n";
+                        if (prot_ok)
+                            protect_remote(cand, thunk.size(), old_prot, nullptr);
+                        ignore_cave = cand;
+                        continue;
+                    }
+
+                    stub = cand;
                     owned = false;
-                } else {
+                }
+
+                if (!stub) {
                     stub = alloc_exec_page();
                     owned = stub != 0;
+                    if (stub) {
+                        SetLastError(0);
+                        if (!write_protected(stub, thunk.data(), thunk.size())) {
+                            std::cout << "[silent] alloc write fail err="
+                                      << GetLastError() << "\n";
+                            g_Memory.Free(stub);
+                            stub = 0;
+                            owned = false;
+                        }
+                    }
                 }
 
                 if (!stub) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: no executable host for stub "
-                                 "(Hyperion blocks remote RWX)\n";
+                    std::cout << "[silent] install fail: no writable executable host\n";
                     return false;
                 }
 
-                const DWORD cave_prot = query_protect(stub);
-                if (!owned)
-                    vprot(stub, thunk.size(), PAGE_EXECUTE_READWRITE);
-
                 RaycastState empty{};
-                if (!w_mem(stub, thunk.data(), thunk.size()) ||
-                    !w_mem(g_hook.state, &empty, sizeof(empty))) {
+                SetLastError(0);
+                if (!w_mem(g_hook.state, &empty, sizeof(empty))) {
                     g_lastFail = now;
-                    std::cout << "[silent] install fail: write stub/state\n";
-                    if (!owned && cave_prot) vprot(stub, thunk.size(), cave_prot);
+                    std::cout << "[silent] install fail: write state err="
+                              << GetLastError() << "\n";
                     if (owned) g_Memory.Free(stub);
                     return false;
                 }
-
-                if (!owned && cave_prot)
-                    vprot(stub, thunk.size(), cave_prot);
 
                 FlushInstructionCache(g_Memory.GetHandle(),
                     reinterpret_cast<void*>(stub), thunk.size());
@@ -454,8 +635,8 @@ namespace Cheat {
                     return false;
                 }
 
-                vprot(slot, 8, PAGE_READWRITE);
-                if (!w_mem(slot, &stub, sizeof(stub)) ||
+                protect_remote(slot, 8, PAGE_READWRITE, nullptr);
+                if (!write_protected(slot, &stub, sizeof(stub)) ||
                     g_Memory.Read<std::uintptr_t>(slot) != stub) {
                     g_lastFail = now;
                     std::cout << "[silent] install fail: slot write/verify\n";
@@ -481,16 +662,13 @@ namespace Cheat {
                 if (g_hook.installed && ok_addr(g_hook.originalFunction) && g_hook.module_base) {
                     const std::uintptr_t slot =
                         g_hook.module_base + desc_rva_z + bound_fn_offset;
-                    vprot(slot, 8, PAGE_READWRITE);
-                    w_mem(slot, &g_hook.originalFunction, sizeof(g_hook.originalFunction));
+                    write_protected(slot, &g_hook.originalFunction,
+                                    sizeof(g_hook.originalFunction));
                 }
 
                 if (g_hook.thunk && !g_hook.thunk_owned) {
                     std::vector<std::uint8_t> pad(k_stub_bytes, 0xCC);
-                    const DWORD cave_prot = query_protect(g_hook.thunk);
-                    vprot(g_hook.thunk, k_stub_bytes, PAGE_EXECUTE_READWRITE);
-                    w_mem(g_hook.thunk, pad.data(), pad.size());
-                    if (cave_prot) vprot(g_hook.thunk, k_stub_bytes, cave_prot);
+                    write_protected(g_hook.thunk, pad.data(), pad.size());
                 }
 
                 if (g_hook.thunk && g_hook.thunk_owned)

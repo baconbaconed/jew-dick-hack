@@ -187,18 +187,19 @@ namespace Cheat {
                 continue;
             }
 
-            const long base = WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-            if (GUI::Menu::IsVisible()) {
-                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base);
-            } else {
-                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base | WS_EX_TRANSPARENT);
-            }
-
             const float clear_color_with_alpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
             m_DeviceContext->OMSetRenderTargets(1, &m_RenderTargetView, nullptr);
             m_DeviceContext->ClearRenderTargetView(m_RenderTargetView, clear_color_with_alpha);
 
             GUI::Menu::Render();
+
+            const LONG base = WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            if (GUI::Menu::IsVisible()) {
+                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base);
+                ClipCursor(nullptr);
+            } else {
+                SetWindowLong(m_Hwnd, GWL_EXSTYLE, base | WS_EX_TRANSPARENT);
+            }
 
             m_SwapChain->Present(1, 0);
         }
@@ -272,12 +273,7 @@ namespace Cheat {
     LRESULT WINAPI Renderer::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 
         if (msg == WM_NCHITTEST) {
-            if (!GUI::Menu::IsVisible())
-                return HTTRANSPARENT;
-
-            POINT pt{ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
-            ScreenToClient(hwnd, &pt);
-            if (GUI::Menu::ShouldCaptureMouse((float)pt.x, (float)pt.y))
+            if (GUI::Menu::IsVisible())
                 return HTCLIENT;
             return HTTRANSPARENT;
         }

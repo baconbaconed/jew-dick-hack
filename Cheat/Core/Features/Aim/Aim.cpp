@@ -65,21 +65,39 @@ namespace Cheat {
                 return enabled[s_cycle];
             }
 
+            ImVec2 overlay_size() {
+                if (HWND oh = Renderer::GetHwnd()) {
+                    RECT ocr{};
+                    if (GetClientRect(oh, &ocr)) {
+                        return ImVec2(
+                            (float)(std::max)(1L, ocr.right - ocr.left),
+                            (float)(std::max)(1L, ocr.bottom - ocr.top));
+                    }
+                }
+                return ImGui::GetIO().DisplaySize;
+            }
+
             ImVec2 cursor_client() {
                 POINT p{};
+                const ImVec2 sz = overlay_size();
                 if (!GetCursorPos(&p))
-                    return ImGui::GetIO().MousePos;
+                    return ImVec2(sz.x * 0.5f, sz.y * 0.5f);
 
                 if (HWND overlay = Renderer::GetHwnd())
                     ScreenToClient(overlay, &p);
-                return ImVec2(static_cast<float>(p.x), static_cast<float>(p.y));
+
+                float x = static_cast<float>(p.x);
+                float y = static_cast<float>(p.y);
+                if (x < 0.f || y < 0.f || x > sz.x || y > sz.y)
+                    return ImVec2(sz.x * 0.5f, sz.y * 0.5f);
+                return ImVec2(x, y);
             }
 
             ImVec2 fov_anchor(const Config& cfg) {
-                const ImGuiIO& io = ImGui::GetIO();
+                const ImVec2 sz = overlay_size();
                 if (cfg.fov_position == 1)
                     return cursor_client();
-                return ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+                return ImVec2(sz.x * 0.5f, sz.y * 0.5f);
             }
 
             void draw_fov(const Config& cfg) {
@@ -89,11 +107,30 @@ namespace Cheat {
 
                 const ImVec2 center = fov_anchor(cfg);
                 const float  radius = (std::max)(1.0f, cfg.fov_size);
-                const ImU32  col = ImGui::ColorConvertFloat4ToU32(ImVec4(
-                    cfg.fov_color[0], cfg.fov_color[1], cfg.fov_color[2], cfg.fov_color[3]));
-                dl->AddCircle(center, radius + 1.0f, IM_COL32(0, 0, 0, 200), 64, 2.0f);
-                dl->AddCircle(center, radius,         col,                   64, 1.0f);
-                dl->AddCircle(center, radius - 1.0f, IM_COL32(0, 0, 0, 100), 64, 1.0f);
+                const ImU32  outline = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                    cfg.fov_outline_color[0], cfg.fov_outline_color[1],
+                    cfg.fov_outline_color[2], cfg.fov_outline_color[3]));
+
+                if (cfg.fov_style == 1) {
+                    const float fill_a = cfg.fov_color[3] * 0.35f;
+                    const float rim_a  = (std::min)(1.0f, cfg.fov_color[3]);
+                    const ImU32 fill = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                        cfg.fov_color[0], cfg.fov_color[1], cfg.fov_color[2], fill_a));
+                    const ImU32 rim = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                        cfg.fov_color[0], cfg.fov_color[1], cfg.fov_color[2], rim_a));
+                    dl->AddCircleFilled(center, radius, fill, 64);
+                    dl->AddCircle(center, radius, rim, 64, 1.75f);
+                } else {
+                    const ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                        cfg.fov_color[0], cfg.fov_color[1], cfg.fov_color[2], cfg.fov_color[3]));
+                    dl->AddCircle(center, radius, col, 64, 1.5f);
+                }
+
+                if (cfg.fov_outline) {
+                    dl->AddCircle(center, radius + 1.0f, outline, 64, 2.0f);
+                    dl->AddCircle(center, radius - 1.0f,
+                        IM_COL32(0, 0, 0, (int)(cfg.fov_outline_color[3] * 100.0f)), 64, 1.0f);
+                }
             }
 
             bool world_to_screen(const Matrix4x4& m, const Vector2& dim,
@@ -263,12 +300,16 @@ namespace Cheat {
             }
 
             void apply_mouse(const Config& cfg, const Vector2& target_screen) {
-                const ImVec2 cur = cursor_client();
+                const ImVec2 cur = fov_anchor(cfg);
 
                 const float sx = (std::max)(0.1f, cfg.smooth_x);
                 const float sy = (std::max)(0.1f, cfg.smooth_y);
-                const float dx = (target_screen.x - cur.x) / sx;
-                const float dy = (target_screen.y - cur.y) / sy;
+                float dx = (target_screen.x - cur.x) / sx;
+                float dy = (target_screen.y - cur.y) / sy;
+
+                constexpr float k_max_step = 80.0f;
+                dx = std::clamp(dx, -k_max_step, k_max_step);
+                dy = std::clamp(dy, -k_max_step, k_max_step);
 
                 const int idx = static_cast<int>(std::lround(dx));
                 const int idy = static_cast<int>(std::lround(dy));

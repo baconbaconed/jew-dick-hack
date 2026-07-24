@@ -162,6 +162,15 @@ void Menu::DrawMenu()
         m_bMenuVisible = !m_bMenuVisible;
         animation_time = 0.0f;
         animation_open_direction = m_bMenuVisible;
+        if (m_bMenuVisible) {
+            ClipCursor(nullptr);
+            while (ShowCursor(TRUE) < 0) {}
+            if (HWND overlay = Renderer::GetHwnd()) {
+                const LONG base =
+                    WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+                SetWindowLong(overlay, GWL_EXSTYLE, base);
+            }
+        }
     }
     insert_previous = insert_pressed;
 
@@ -362,9 +371,9 @@ void Menu::DrawMenu()
                 : 13.0f;
 
             auto make_side_child_size = [&](int columns) -> ImVec2 {
-                const float column_w = columns > 1
-                    ? (inner_w - k_side_child_gap) / static_cast<float>(columns)
-                    : inner_w;
+                const int cols = columns < 1 ? 1 : columns;
+                const float gaps = k_side_child_gap * static_cast<float>(cols - 1);
+                const float column_w = (inner_w - gaps) / static_cast<float>(cols);
                 return ImVec2(ImMax(k_side_child_w_min, column_w), side_child_h);
             };
 
@@ -539,6 +548,14 @@ void Menu::DrawMenu()
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("explorer", &g_Settings.misc.explorer);
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("custom support", &g_Settings.misc.custom_support);
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     {
                         auto& gui = g_Settings.gui;
                         static int s_last_theme = -1;
@@ -578,46 +595,66 @@ void Menu::DrawMenu()
                     aim_left_pos.x + aim_child_size.x + k_side_child_gap,
                     k_child_margin);
 
-                {
-                    if (draw_side_child("aim_main", "aim", aim_left_pos, aim_child_size)) {
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
-                        widgets::keybind("aim key", &g_Settings.aim.bind, &g_Settings.aim.bind_mode);
+                Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
 
+                if (draw_side_child("aim_main", "aim", aim_left_pos, aim_child_size)) {
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
+                    widgets::keybind("aim key", &g_Settings.aim.bind, &g_Settings.aim.bind_mode);
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                    {
+                        static const char* k_types[] = { "mouse", "camera", "silent" };
+                        widgets::combo("type", &g_Settings.aim.type, k_types, 3);
+                    }
+
+                    if (g_Settings.aim.type == 2) {
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
                         {
-                            static const char* k_types[] = { "mouse", "camera", "silent" };
-                            widgets::combo("type", &g_Settings.aim.type, k_types, 3);
+                            static const char* k_silent[] = {
+                                "viewport", "mouse", "raycast", "magic bullet"
+                            };
+                            widgets::combo("silent method", &g_Settings.aim.silent_method,
+                                k_silent, Cheat::Settings::SILENT_METHOD_COUNT);
                         }
 
-                        if (g_Settings.aim.type == 2) {
+                        if (g_Settings.aim.silent_method == Cheat::Settings::SILENT_RAYCAST) {
                             ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                            {
-                                static const char* k_silent[] = {
-                                    "viewport", "mouse", "raycast", "magic bullet"
-                                };
-                                widgets::combo("silent method", &g_Settings.aim.silent_method,
-                                    k_silent, Cheat::Settings::SILENT_METHOD_COUNT);
-                            }
-
-                            if (g_Settings.aim.silent_method == Cheat::Settings::SILENT_RAYCAST) {
-                                ImGui::SetCursorPosX(6.0f);
-                                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                                widgets::checkbox_keybind(
-                                    "force magic bullet",
-                                    &g_Settings.aim.force_magic_bullet,
-                                    &g_Settings.aim.force_magic_key,
-                                    &g_Settings.aim.force_magic_mode);
-                            }
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                            widgets::checkbox_keybind(
+                                "force magic bullet",
+                                &g_Settings.aim.force_magic_bullet,
+                                &g_Settings.aim.force_magic_key,
+                                &g_Settings.aim.force_magic_mode);
                         }
-
-                        Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
+                    } else {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("smoothness x", &cfg.smooth_x, 0.1f, 5.0f, "%.1f");
 
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        row_checkbox_color("fov check", &cfg.fov_enabled, cfg.fov_color, "aim_fov_color");
+                        widgets::slider_float("smoothness y", &cfg.smooth_y, 0.1f, 5.0f, "%.1f");
+                    }
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    row_checkbox_color("fov check", &cfg.fov_enabled, cfg.fov_color, "aim_fov_color");
+
+                    if (cfg.fov_enabled) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        {
+                            static const char* k_fov_style[] = { "circle", "filled" };
+                            widgets::combo("fov style", &cfg.fov_style, k_fov_style, 2);
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        row_checkbox_color("fov outline", &cfg.fov_outline,
+                                           cfg.fov_outline_color, "aim_fov_outline_color");
 
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
@@ -629,143 +666,131 @@ void Menu::DrawMenu()
                             static const char* k_pos[] = { "center", "mouse" };
                             widgets::combo("fov pos", &cfg.fov_position, k_pos, 2);
                         }
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("distance check", &cfg.distance_check);
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::slider_float("max distance", &cfg.max_distance, 50.0f, 5000.0f, "%.0f");
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("visible only", &cfg.visible_only);
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                        widgets::checkbox("humanize", &cfg.humanize);
-
-                        if (cfg.humanize) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("reaction", &cfg.reaction_ms, 0.0f, 400.0f, "%.0fms");
-                        }
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
-                        widgets::checkbox("sticky target", &cfg.sticky);
-
-                        if (cfg.sticky) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("sticky fov", &cfg.sticky_fov_scale, 1.0f, 4.0f, "%.1fx");
-                        }
                     }
-                    widgets::end_child_panel();
 
-                    if (draw_side_child("aim_hitbox", "hitboxes", aim_right_pos, aim_child_size)) {
-                        Cheat::Settings::AimbotConfig& cfg = g_Settings.aim.active();
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("distance check", &cfg.distance_check);
 
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-                        {
-                            static const char* k_parts[] = {
-                                "head", "upper torso", "lower torso", "hrp",
-                                "left hand", "right hand", "left foot", "right foot"
-                            };
-                            widgets::multi_combo("body parts", cfg.parts, k_parts,
-                                Cheat::Settings::AIM_PART_COUNT);
-                        }
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::slider_float("max distance", &cfg.max_distance, 50.0f, 5000.0f, "%.0f");
 
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::slider_float("switch time", &cfg.switch_time, 0.05f, 2.0f, "%.2fs");
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("visible only", &cfg.visible_only);
 
-                        if (g_Settings.aim.type != 2) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("smoothness x", &cfg.smooth_x, 0.1f, 5.0f, "%.1f");
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                    widgets::checkbox("humanize", &cfg.humanize);
 
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("smoothness y", &cfg.smooth_y, 0.1f, 5.0f, "%.1f");
-                        }
-
+                    if (cfg.humanize) {
                         ImGui::SetCursorPosX(6.0f);
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("kill effects", &g_Settings.killfx.enabled);
-
-                        if (g_Settings.killfx.enabled) {
-                            if (g_Settings.killfx.effect < 0 ||
-                                g_Settings.killfx.effect >= Visuals::KillEffects::EffectNameCount())
-                                g_Settings.killfx.effect = 0;
-
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::combo("kill fx", &g_Settings.killfx.effect,
-                                           Visuals::KillEffects::EffectNames(),
-                                           Visuals::KillEffects::EffectNameCount());
-                        }
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("hitmarkers", &g_Settings.hitmarker.enabled);
-
-                        if (g_Settings.hitmarker.enabled) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("marker size", &g_Settings.hitmarker.size, 0.5f, 2.5f, "%.2f");
-
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("marker time", &g_Settings.hitmarker.duration, 0.2f, 1.5f, "%.2fs");
-                        }
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("hitsounds", &g_Settings.hitsound.enabled);
-
-                        if (g_Settings.hitsound.enabled) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            if (g_Settings.hitsound.index < 0 ||
-                                g_Settings.hitsound.index >= Features::HitSounds::Count())
-                                g_Settings.hitsound.index = 0;
-                            if (widgets::combo("hitsound", &g_Settings.hitsound.index,
-                                               Features::HitSounds::Names(),
-                                               Features::HitSounds::Count())) {
-                                Features::HitSounds::Play(g_Settings.hitsound.index);
-                            }
-
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("hitsound volume", &g_Settings.hitsound.volume,
-                                                  0.0f, 100.0f, "%.0f%%");
-                        }
-
-                        ImGui::SetCursorPosX(6.0f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                        widgets::checkbox("hit data", &g_Settings.hitdata.enabled);
-
-                        if (g_Settings.hitdata.enabled) {
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::multi_combo("data lines", g_Settings.hitdata.modes,
-                                                 Visuals::KillEffects::HitDataModeNames(),
-                                                 Visuals::KillEffects::HitDataModeNameCount());
-
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("data size", &g_Settings.hitdata.size, 10.0f, 28.0f, "%.0f");
-
-                            ImGui::SetCursorPosX(6.0f);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            widgets::slider_float("data time", &g_Settings.hitdata.duration, 0.4f, 2.5f, "%.2fs");
-                        }
+                        widgets::slider_float("reaction", &cfg.reaction_ms, 0.0f, 400.0f, "%.0fms");
                     }
-                    widgets::end_child_panel();
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 5.0f);
+                    widgets::checkbox("sticky target", &cfg.sticky);
+
+                    if (cfg.sticky) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("sticky fov", &cfg.sticky_fov_scale, 1.0f, 4.0f, "%.1fx");
+                    }
                 }
+                widgets::end_child_panel();
+
+                if (draw_side_child("aim_extra", "extra", aim_right_pos, aim_child_size)) {
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+                    {
+                        static const char* k_parts[] = {
+                            "head", "upper torso", "lower torso", "hrp",
+                            "left hand", "right hand", "left foot", "right foot"
+                        };
+                        widgets::multi_combo("body parts", cfg.parts, k_parts,
+                            Cheat::Settings::AIM_PART_COUNT);
+                    }
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::slider_float("switch time", &cfg.switch_time, 0.05f, 2.0f, "%.2fs");
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("kill effects", &g_Settings.killfx.enabled);
+
+                    if (g_Settings.killfx.enabled) {
+                        if (g_Settings.killfx.effect < 0 ||
+                            g_Settings.killfx.effect >= Visuals::KillEffects::EffectNameCount())
+                            g_Settings.killfx.effect = 0;
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::combo("kill fx", &g_Settings.killfx.effect,
+                                       Visuals::KillEffects::EffectNames(),
+                                       Visuals::KillEffects::EffectNameCount());
+                    }
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("hitmarkers", &g_Settings.hitmarker.enabled);
+
+                    if (g_Settings.hitmarker.enabled) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("marker size", &g_Settings.hitmarker.size, 0.5f, 2.5f, "%.2f");
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("marker time", &g_Settings.hitmarker.duration, 0.2f, 1.5f, "%.2fs");
+                    }
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("hitsounds", &g_Settings.hitsound.enabled);
+
+                    if (g_Settings.hitsound.enabled) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        if (g_Settings.hitsound.index < 0 ||
+                            g_Settings.hitsound.index >= Features::HitSounds::Count())
+                            g_Settings.hitsound.index = 0;
+                        if (widgets::combo("hitsound", &g_Settings.hitsound.index,
+                                           Features::HitSounds::Names(),
+                                           Features::HitSounds::Count())) {
+                            Features::HitSounds::Play(g_Settings.hitsound.index);
+                        }
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("hitsound volume", &g_Settings.hitsound.volume,
+                                              0.0f, 100.0f, "%.0f%%");
+                    }
+
+                    ImGui::SetCursorPosX(6.0f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                    widgets::checkbox("hit data", &g_Settings.hitdata.enabled);
+
+                    if (g_Settings.hitdata.enabled) {
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::multi_combo("data lines", g_Settings.hitdata.modes,
+                                             Visuals::KillEffects::HitDataModeNames(),
+                                             Visuals::KillEffects::HitDataModeNameCount());
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("data size", &g_Settings.hitdata.size, 10.0f, 28.0f, "%.0f");
+
+                        ImGui::SetCursorPosX(6.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
+                        widgets::slider_float("data time", &g_Settings.hitdata.duration, 0.4f, 2.5f, "%.2fs");
+                    }
+                }
+                widgets::end_child_panel();
             } else if (active_tab == 4) {
 
                 const ImVec2 misc_child_size = make_side_child_size(2);
@@ -845,14 +870,6 @@ void Menu::DrawMenu()
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
                     widgets::slider_float("fly speed", &g_Settings.misc.fly_speed, 10.0f, 300.0f, "%.0f");
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("explorer", &g_Settings.misc.explorer);
-
-                    ImGui::SetCursorPosX(6.0f);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                    widgets::checkbox("custom support", &g_Settings.misc.custom_support);
 
                     ImGui::SetCursorPosX(6.0f);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 1.0f);

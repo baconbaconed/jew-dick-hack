@@ -56,6 +56,8 @@ namespace Cheat {
             bool  fov_enabled{ false };
             float fov_size{ 120.0f };
             int   fov_position{ 0 };
+            int   fov_style{ 0 };
+            bool  fov_outline{ true };
             bool  distance_check{ false };
             float max_distance{ 1000.0f };
             bool  visible_only{ false };
@@ -73,6 +75,7 @@ namespace Cheat {
             float sticky_fov_scale{ 1.5f };
 
             float fov_color[4]{ 0.20f, 0.478f, 0.906f, 0.86f };
+            float fov_outline_color[4]{ 0.f, 0.f, 0.f, 0.78f };
         };
 
         enum SilentMethod {
