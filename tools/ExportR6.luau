@@ -1,15 +1,4 @@
---!strict
---[[
-	BOX-ONLY body export (no accessories — Roblox blocks forking catalog meshes).
 
-	For FULL avatar WITH accessories + textures:
-	  1) _G.JewsploitExportR6()  — spawns your R6 in Workspace
-	  2) Select that model in Explorer
-	  3) File → Export Selection… → jewsploit.obj (+ mtl/png)
-	  4) Drop into Cheat/Core/Features/Visuals/preview_model/ as model.obj + texture.png
-
-	This script alone only dumps body boxes → JewsploitModelOBJ StringValue.
-]]
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -18,7 +7,6 @@ local Selection = game:GetService("Selection")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Core R6 only (no accessories / Handle)
 local BODY = {
 	"Head",
 	"Torso",
@@ -28,7 +16,6 @@ local BODY = {
 	"Right Leg",
 }
 
--- ESP skeleton order (13) — synthesized from 6 R6 parts
 local JOINT_ORDER = {
 	"Head",
 	"UpperTorso",
@@ -104,7 +91,7 @@ local function newObj(): Obj
 		end,
 		addVt = function(self, u, v)
 			table.insert(self.lines, string.format("vt %s %s", fmt(u), fmt(v)))
-			return self.v -- vt index == current v count when we add 1:1; we track separately below
+			return self.v
 		end,
 		addTri = function(self, a, b, c, ta, tb, tc)
 			table.insert(self.lines, string.format("f %d/%d %d/%d %d/%d", a, ta, b, tb, c, tc))
@@ -127,7 +114,6 @@ local function addBox(obj: Obj, rootCF: CFrame, part: BasePart, vtBase: { number
 		p[i] = rel:PointToWorldSpace(corners[i])
 	end
 
-	-- 6 faces as quads → 2 tris; unique verts+uvs per face corner (clean UVs)
 	local faces = {
 		{ 1, 2, 3, 4 },
 		{ 6, 5, 8, 7 },
@@ -176,7 +162,6 @@ local function buildJoints(character: Model, rootCF: CFrame): { { number } }
 		return { x, y, z }
 	end
 
-	-- indices match JOINT_ORDER
 	return {
 		j(head, 0, 0, 0),
 		j(torso, 0, torso and torso.Size.Y * 0.15 or 0, 0),
